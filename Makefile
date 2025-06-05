@@ -2,8 +2,8 @@ PYTHON=python3.12
 VENV=.venv
 
 setup:
-	pyenv install -s 3.12.1
-	pyenv virtualenv -f 3.12.1 $(VENV)
+        pyenv install -s 3.12.10
+        pyenv virtualenv -f 3.12.10 $(VENV)
 	$(VENV)/bin/pip install poetry
 	$(VENV)/bin/poetry install
 
