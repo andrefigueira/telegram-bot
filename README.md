@@ -8,6 +8,12 @@ Minimal example of a privacy-first Telegram shop.
 make setup
 ```
 
+If the command fails on macOS, install the required build tools:
+
+```bash
+brew install openssl readline sqlite3 xz zlib tcl-tk
+```
+
 Create `.env` from `.env.template` and fill values. Add your Telegram ID to
 `ADMIN_IDS` for vendor commands and to `SUPER_ADMIN_IDS` for platform control.
 If `TOTP_SECRET` is provided, all admin commands require a valid code as the
