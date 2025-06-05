@@ -15,10 +15,25 @@ last argument.
 
 ## Usage
 
-Run the bot:
+Run the bot locally:
 
 ```bash
 make run
+```
+
+### Docker
+
+Build the production image and start the container:
+
+```bash
+make build
+docker run --env-file .env telegram-bot
+```
+
+Alternatively use `docker-compose`:
+
+```bash
+docker-compose up -d
 ```
 
 The bot stores minimal order metadata in SQLite. Old orders are automatically
