@@ -9,15 +9,30 @@ from ..services.catalog import CatalogService
 from ..services.vendors import VendorService
 from ..models import Product, Vendor
 from ..config import get_settings
+import pyotp
 
 
-def _is_admin(user_id: int) -> bool:
+def _is_admin(user_id: int, token: str | None = None) -> bool:
     settings = get_settings()
-    return user_id in settings.admin_ids or user_id in settings.super_admin_ids
+    allowed = user_id in settings.admin_ids or user_id in settings.super_admin_ids
+    if not allowed:
+        return False
+    if settings.totp_secret:
+        if token is None:
+            return False
+        return pyotp.TOTP(settings.totp_secret).verify(token)
+    return True
 
 
-def _is_super_admin(user_id: int) -> bool:
-    return user_id in get_settings().super_admin_ids
+def _is_super_admin(user_id: int, token: str | None = None) -> bool:
+    settings = get_settings()
+    if user_id not in settings.super_admin_ids:
+        return False
+    if settings.totp_secret:
+        if token is None:
+            return False
+        return pyotp.TOTP(settings.totp_secret).verify(token)
+    return True
 
 
 async def add(
@@ -28,11 +43,14 @@ async def add(
 ) -> None:
     """Add a new product from command arguments."""
     user_id = update.effective_user.id
-    if not _is_admin(user_id):
-        return
     args = context.args
+    token = args[-1] if get_settings().totp_secret else None
+    if not _is_admin(user_id, token):
+        return
+    if get_settings().totp_secret:
+        args = args[:-1]
     if len(args) < 3:
-        await update.message.reply_text("Usage: /add <name> <price> <inventory>")
+        await update.message.reply_text("Usage: /add <name> <price> <inventory> [totp]")
         return
     name, price, inventory = args[0], float(args[1]), int(args[2])
     vendor = vendors.get_by_telegram_id(user_id)
@@ -56,11 +74,14 @@ async def add_vendor(
     vendors: VendorService,
 ) -> None:
     """Register a new vendor (super admin only)."""
-    if not _is_super_admin(update.effective_user.id):
-        return
     args = context.args
+    token = args[-1] if get_settings().totp_secret else None
+    if not _is_super_admin(update.effective_user.id, token):
+        return
+    if get_settings().totp_secret:
+        args = args[:-1]
     if len(args) < 2:
-        await update.message.reply_text("Usage: /addvendor <telegram_id> <name>")
+        await update.message.reply_text("Usage: /addvendor <telegram_id> <name> [totp]")
         return
     tg_id, name = int(args[0]), args[1]
     vendor = Vendor(telegram_id=tg_id, name=name)
@@ -74,8 +95,12 @@ async def list_vendors(
     vendors: VendorService,
 ) -> None:
     """List all vendors (super admin only)."""
-    if not _is_super_admin(update.effective_user.id):
+    args = context.args
+    token = args[-1] if get_settings().totp_secret else None
+    if not _is_super_admin(update.effective_user.id, token):
         return
+    if get_settings().totp_secret:
+        args = args[:-1]
     items = vendors.list_vendors()
     if not items:
         await update.message.reply_text("No vendors")
@@ -90,11 +115,14 @@ async def set_commission(
     vendors: VendorService,
 ) -> None:
     """Set vendor commission (super admin only)."""
-    if not _is_super_admin(update.effective_user.id):
-        return
     args = context.args
+    token = args[-1] if get_settings().totp_secret else None
+    if not _is_super_admin(update.effective_user.id, token):
+        return
+    if get_settings().totp_secret:
+        args = args[:-1]
     if len(args) < 2:
-        await update.message.reply_text("Usage: /commission <vendor_id> <rate>")
+        await update.message.reply_text("Usage: /commission <vendor_id> <rate> [totp]")
         return
     vendor_id, rate = int(args[0]), float(args[1])
     vendor = vendors.set_commission(vendor_id, rate)

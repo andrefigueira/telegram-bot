@@ -15,6 +15,7 @@ class Product(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str
     description: str
+    category: Optional[str] = None
     price_xmr: float
     media_id: Optional[str] = None
     inventory: int = 0

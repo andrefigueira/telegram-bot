@@ -15,6 +15,7 @@ def test_build_app(monkeypatch) -> None:
         encryption_key=key,
         data_retention_days=30,
         default_commission_rate=0.05,
+        totp_secret=None,
     )
     monkeypatch.setattr("bot.config.get_settings", lambda: settings)
     monkeypatch.setattr("bot.services.orders.get_settings", lambda: settings)

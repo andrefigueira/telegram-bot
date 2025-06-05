@@ -8,7 +8,7 @@ def test_add_and_list_product(tmp_path) -> None:
     vendor_service = VendorService(db)
     vendor = vendor_service.add_vendor(Vendor(telegram_id=1, name="vendor"))
     service = CatalogService(db)
-    prod = Product(name="A", description="B", price_xmr=1.0, inventory=1, vendor_id=vendor.id)
+    prod = Product(name="A", description="B", category="cat", price_xmr=1.0, inventory=1, vendor_id=vendor.id)
     added = service.add_product(prod)
     assert service.get_product(added.id) is not None
     products = service.list_products()
@@ -17,6 +17,11 @@ def test_add_and_list_product(tmp_path) -> None:
     added.inventory = 2
     service.update_product(added)
     assert service.get_product(added.id).inventory == 2
+    assert service.search("A")[0].id == added.id
+    second = service.add_product(
+        Product(name="B", description="", category="extra", price_xmr=1.0, inventory=1, vendor_id=vendor.id)
+    )
+    assert service.search("extra")[0].id == second.id
     service.delete_product(added.id)
     assert service.get_product(added.id) is None
     service.delete_product(999)  # cover branch when product missing

@@ -50,3 +50,14 @@ class CatalogService:
         """List products belonging to a vendor."""
         with self.db.session() as session:
             return list(session.exec(select(Product).where(Product.vendor_id == vendor_id)))
+
+    def search(self, query: str) -> List[Product]:
+        """Search products by name, description or category."""
+        like = f"%{query}%"
+        stmt = select(Product).where(
+            (Product.name.ilike(like)) |
+            (Product.description.ilike(like)) |
+            (Product.category.ilike(like))
+        )
+        with self.db.session() as session:
+            return list(session.exec(stmt))

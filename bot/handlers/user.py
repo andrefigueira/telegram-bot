@@ -15,8 +15,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def list_products(update: Update, context: ContextTypes.DEFAULT_TYPE, catalog: CatalogService) -> None:
-    """List available products."""
-    products = catalog.list_products()
+    """List available products or search results."""
+    query = context.args[0] if context.args else ""
+    products = catalog.search(query) if query else catalog.list_products()
     if not products:
         await update.message.reply_text("No products.")
         return
