@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from sqlmodel import Field, SQLModel, create_engine, Session, select
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 import base64
-from nacl import secret, utils
+from nacl import secret
 
 
 class Product(SQLModel, table=True):
@@ -18,6 +18,17 @@ class Product(SQLModel, table=True):
     price_xmr: float
     media_id: Optional[str] = None
     inventory: int = 0
+    vendor_id: int = Field(foreign_key="vendor.id")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class Vendor(SQLModel, table=True):
+    """Store vendor information."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    telegram_id: int
+    name: str
+    commission_rate: float = 0.05
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
@@ -26,9 +37,11 @@ class Order(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     product_id: int = Field(foreign_key="product.id")
+    vendor_id: int = Field(foreign_key="vendor.id")
     quantity: int
     payment_id: str
     address_encrypted: str
+    commission_xmr: float = 0.0
     state: str = "NEW"
     created_at: datetime = Field(default_factory=datetime.utcnow)
 

@@ -9,9 +9,11 @@ class Settings(BaseSettings):
 
     telegram_token: str = Field("", env="TELEGRAM_TOKEN")
     admin_ids: List[int] = Field(default_factory=list, env="ADMIN_IDS")
+    super_admin_ids: List[int] = Field(default_factory=list, env="SUPER_ADMIN_IDS")
     monero_rpc_url: str = Field("", env="MONERO_RPC_URL")
     encryption_key: str = Field("", env="ENCRYPTION_KEY")
     data_retention_days: int = Field(30, env="DATA_RETENTION_DAYS")
+    default_commission_rate: float = Field(0.05, env="DEFAULT_COMMISSION_RATE")
 
     class Config:
         env_file = ".env"

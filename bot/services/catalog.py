@@ -45,3 +45,8 @@ class CatalogService:
     def list_products(self) -> List[Product]:
         with self.db.session() as session:
             return list(session.exec(select(Product)))
+
+    def list_products_by_vendor(self, vendor_id: int) -> List[Product]:
+        """List products belonging to a vendor."""
+        with self.db.session() as session:
+            return list(session.exec(select(Product).where(Product.vendor_id == vendor_id)))

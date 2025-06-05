@@ -10,9 +10,11 @@ def test_build_app(monkeypatch) -> None:
     settings = Settings(
         telegram_token="123:ABC",
         admin_ids=[],
+        super_admin_ids=[],
         monero_rpc_url="url",
         encryption_key=key,
         data_retention_days=30,
+        default_commission_rate=0.05,
     )
     monkeypatch.setattr("bot.config.get_settings", lambda: settings)
     monkeypatch.setattr("bot.services.orders.get_settings", lambda: settings)

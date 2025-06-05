@@ -8,7 +8,8 @@ Minimal example of a privacy-first Telegram shop.
 make setup
 ```
 
-Create `.env` from `.env.template` and fill values.
+Create `.env` from `.env.template` and fill values. Add your Telegram ID to
+`ADMIN_IDS` for vendor commands and to `SUPER_ADMIN_IDS` for platform control.
 
 ## Usage
 

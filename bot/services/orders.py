@@ -6,27 +6,46 @@ from typing import List
 from datetime import datetime, timedelta
 from sqlmodel import select
 
-from ..models import Order, Database, encrypt, decrypt
+from ..models import Order, Database, encrypt, decrypt, Product
 from .payments import PaymentService
+from .vendors import VendorService
+from .catalog import CatalogService
 from ..config import get_settings
 
 
 class OrderService:
     """Manage orders in the database."""
 
-    def __init__(self, db: Database, payments: PaymentService) -> None:
+    def __init__(
+        self,
+        db: Database,
+        payments: PaymentService,
+        catalog: CatalogService,
+        vendors: VendorService,
+    ) -> None:
         self.db = db
         self.payments = payments
+        self.catalog = catalog
+        self.vendors = vendors
         self.settings = get_settings()
 
     def create_order(self, product_id: int, quantity: int, address: str) -> Order:
+        product = self.catalog.get_product(product_id)
+        if not product:
+            raise ValueError("Product not found")
+        vendor = self.vendors.get_vendor(product.vendor_id)
+        if not vendor:
+            raise ValueError("Vendor not found")
         _, payment_id = self.payments.create_address()
         encrypted = encrypt(address, self.settings.encryption_key)
+        commission = product.price_xmr * quantity * vendor.commission_rate
         order = Order(
             product_id=product_id,
+            vendor_id=vendor.id,
             quantity=quantity,
             payment_id=payment_id,
             address_encrypted=encrypted,
+            commission_xmr=commission,
         )
         with self.db.session() as session:
             session.add(order)
