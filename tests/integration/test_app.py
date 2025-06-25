@@ -1,6 +1,7 @@
 from bot.main import build_app
 from bot.config import Settings
-import base64, os
+import base64
+import os
 import telegram.ext
 import telegram.ext._extbot
 

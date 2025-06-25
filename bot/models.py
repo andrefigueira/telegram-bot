@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from sqlmodel import Field, SQLModel, create_engine, Session, select
-from typing import Optional, List
+from sqlmodel import Field, SQLModel, create_engine, Session
+from typing import Optional
 from datetime import datetime
 import base64
 from nacl import secret

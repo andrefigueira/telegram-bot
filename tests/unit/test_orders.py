@@ -3,7 +3,8 @@ from bot.services.payments import PaymentService
 from bot.services.catalog import CatalogService
 from bot.services.vendors import VendorService
 from bot.models import Database, Product, Vendor
-import base64, os
+import base64
+import os
 from bot.config import Settings
 import pytest
 from datetime import timedelta, datetime
@@ -36,6 +37,8 @@ def test_create_and_mark_paid(monkeypatch, tmp_path) -> None:
     order = orders.create_order(product.id, 1, "addr")
     assert order.commission_xmr == pytest.approx(0.05)
     assert orders.get_address(order) == "addr"
+    # inventory should be decremented
+    assert catalog.get_product(product.id).inventory == 0
     updated = orders.mark_paid(order.id)
     assert updated.state == "PAID"
     fetched = orders.get_order(order.id)
@@ -68,6 +71,8 @@ def test_create_order_errors(tmp_path) -> None:
     product = catalog.add_product(
         Product(name="p", description="", price_xmr=1.0, inventory=1, vendor_id=vend.id)
     )
+    with pytest.raises(ValueError):
+        orders.create_order(product.id, 2, "addr")
     # remove vendor to trigger not found
     with db.session() as s:
         s.delete(vend)
