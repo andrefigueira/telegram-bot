@@ -44,11 +44,14 @@ docker-compose up -d
 
 The bot stores minimal order metadata in SQLite. Old orders are automatically
 purged after the interval configured via `DATA_RETENTION_DAYS`.
-Products support optional categories, and `/list` accepts a search term.
+Products support optional categories, and `/list` accepts a search term. Product
+inventory is reduced when an order is created and orders exceeding available
+stock are rejected.
 
 ## Testing
 
 ```bash
+make setup  # once
 make test
 ```
 

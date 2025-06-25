@@ -6,7 +6,7 @@ from typing import List
 from datetime import datetime, timedelta
 from sqlmodel import select
 
-from ..models import Order, Database, encrypt, decrypt, Product
+from ..models import Order, Database, encrypt, decrypt
 from .payments import PaymentService
 from .vendors import VendorService
 from .catalog import CatalogService
@@ -33,6 +33,8 @@ class OrderService:
         product = self.catalog.get_product(product_id)
         if not product:
             raise ValueError("Product not found")
+        if product.inventory < quantity:
+            raise ValueError("Insufficient inventory")
         vendor = self.vendors.get_vendor(product.vendor_id)
         if not vendor:
             raise ValueError("Vendor not found")
@@ -48,6 +50,8 @@ class OrderService:
             commission_xmr=commission,
         )
         with self.db.session() as session:
+            product.inventory -= quantity
+            session.add(product)
             session.add(order)
             session.commit()
             session.refresh(order)
