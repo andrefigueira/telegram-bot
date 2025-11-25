@@ -34,7 +34,7 @@ class MoneroPaymentService:
     def create_address(self) -> Tuple[str, str]:
         """Create a new payment address with unique payment ID."""
         payment_id = uuid.uuid4().hex
-        
+
         try:
             wallet = self._get_wallet()
             if wallet:
@@ -43,12 +43,14 @@ class MoneroPaymentService:
                 return str(address), payment_id
         except Exception as e:
             logger.error(f"Failed to create Monero address: {e}")
-        
-        # Fallback for development/testing
-        if self.settings.environment == "development":
-            address = f"4A{payment_id[:10]}..."  # Mock address
-            return address, payment_id
-        
+
+        # Fallback for development/testing or when RPC not configured
+        if self.settings.environment == "development" or not self.settings.monero_rpc_url:
+            # Generate a realistic-looking mock address for demo purposes
+            mock_address = f"4{payment_id}{'A' * (95 - len(payment_id) - 1)}"
+            logger.warning(f"Using mock payment address (no Monero RPC configured)")
+            return mock_address, payment_id
+
         raise RetryableError("Failed to create payment address")
     
     def check_paid(self, payment_id: str, expected_amount: Optional[Decimal] = None) -> bool:
@@ -58,13 +60,13 @@ class MoneroPaymentService:
             if wallet:
                 # Check incoming transfers with payment ID
                 transfers = wallet.incoming(payment_id=payment_id)
-                
+
                 if not transfers:
                     return False
-                
+
                 # Sum all transfers with this payment ID
                 total_received = sum(t.amount for t in transfers)
-                
+
                 # Check if expected amount is met
                 if expected_amount and total_received < expected_amount:
                     logger.warning(
@@ -72,16 +74,16 @@ class MoneroPaymentService:
                         f"expected {expected_amount} XMR"
                     )
                     return False
-                
+
                 return True
-                
+
         except Exception as e:
             logger.error(f"Failed to check payment status: {e}")
-        
-        # Fallback for development/testing
-        if self.settings.environment == "development":
-            return True
-        
+
+        # Fallback for development/testing or when RPC not configured
+        if self.settings.environment == "development" or not self.settings.monero_rpc_url:
+            return False  # In demo mode, payments stay pending
+
         raise RetryableError("Failed to check payment status")
     
     def get_balance(self) -> Decimal:
