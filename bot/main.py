@@ -4,7 +4,14 @@ import asyncio
 import logging
 import signal
 import sys
-from telegram.ext import ApplicationBuilder, CommandHandler, Application
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    CallbackQueryHandler,
+    MessageHandler,
+    Application,
+    filters,
+)
 
 from .config import get_settings
 from .models import Database
@@ -23,41 +30,81 @@ logger = logging.getLogger(__name__)
 
 def build_app() -> Application:
     settings = get_settings()
-    
+
     # Setup logging
     setup_logging(settings.log_level, settings.log_file)
-    
+
     logger.info(f"Starting bot in {settings.environment} environment")
-    
+
     # Initialize database
     db = Database(settings.database_url)
-    
+
     # Initialize services
     vendors = VendorService(db)
     catalog = CatalogService(db)
     payments = PaymentService()
     orders = OrderService(db, payments, catalog, vendors)
-    
+
     # Build application
     application = ApplicationBuilder().token(settings.telegram_token).build()
-    
+
     # Add error handler
     application.add_error_handler(error_handler)
-    
-    # Add command handlers
+
+    # Command handlers
     application.add_handler(CommandHandler("start", user.start))
+    application.add_handler(CommandHandler("help", user.help_command))
+    application.add_handler(CommandHandler("setup", user.setup_command))
     application.add_handler(CommandHandler("list", lambda u, c: user.list_products(u, c, catalog)))
     application.add_handler(CommandHandler("products", lambda u, c: user.list_products(u, c, catalog)))
     application.add_handler(CommandHandler("order", lambda u, c: user.order(u, c, orders)))
+    application.add_handler(CommandHandler("orders", lambda u, c: user.orders_list(u, c, orders)))
+    application.add_handler(CommandHandler("status", lambda u, c: user.order_status(u, c, orders)))
+
+    # Admin command handlers
     application.add_handler(CommandHandler("add", lambda u, c: admin.add(u, c, catalog, vendors)))
     application.add_handler(CommandHandler("addvendor", lambda u, c: admin.add_vendor(u, c, vendors)))
     application.add_handler(CommandHandler("vendors", lambda u, c: admin.list_vendors(u, c, vendors)))
     application.add_handler(CommandHandler("commission", lambda u, c: admin.set_commission(u, c, vendors)))
-    
+
+    # Callback query handlers for button interactions
+    application.add_handler(CallbackQueryHandler(
+        lambda u, c: user.handle_menu_callback(u, c, catalog),
+        pattern=r"^menu:"
+    ))
+    application.add_handler(CallbackQueryHandler(
+        user.handle_setup_callback,
+        pattern=r"^setup:"
+    ))
+    application.add_handler(CallbackQueryHandler(
+        user.handle_payment_toggle_callback,
+        pattern=r"^pay:"
+    ))
+    application.add_handler(CallbackQueryHandler(
+        lambda u, c: user.handle_products_callback(u, c, catalog),
+        pattern=r"^products:"
+    ))
+    application.add_handler(CallbackQueryHandler(
+        lambda u, c: user.handle_product_callback(u, c, catalog),
+        pattern=r"^product:"
+    ))
+    application.add_handler(CallbackQueryHandler(
+        lambda u, c: user.handle_order_callback(u, c, orders, catalog),
+        pattern=r"^order:"
+    ))
+
+    # Message handler for text input (setup flows, delivery address)
+    application.add_handler(MessageHandler(
+        filters.TEXT & ~filters.COMMAND,
+        lambda u, c: user.handle_text_input(u, c, orders, catalog)
+    ))
+
     # Store services in application context
     application.bot_data["db"] = db
+    application.bot_data["catalog"] = catalog
+    application.bot_data["orders"] = orders
     application.bot_data["health_server"] = HealthCheckServer(db)
-    
+
     return application
 
 
@@ -66,22 +113,22 @@ async def post_init(application: Application) -> None:
     # Start health check server
     health_server = application.bot_data["health_server"]
     await health_server.start()
-    
+
     # Start background tasks
     db = application.bot_data["db"]
     asyncio.create_task(start_background_tasks(db))
-    
+
     logger.info("Bot initialization complete")
 
 
 async def post_shutdown(application: Application) -> None:
     """Clean up resources on shutdown."""
     logger.info("Shutting down bot...")
-    
+
     # Stop health check server
     health_server = application.bot_data["health_server"]
     await health_server.stop()
-    
+
     logger.info("Bot shutdown complete")
 
 
@@ -96,12 +143,12 @@ def main() -> None:
     # Set up signal handlers
     signal.signal(signal.SIGINT, handle_signal)
     signal.signal(signal.SIGTERM, handle_signal)
-    
+
     # Build and run application
     app = build_app()
     app.post_init = post_init
     app.post_shutdown = post_shutdown
-    
+
     try:
         app.run_polling(drop_pending_updates=True)
     except Exception as e:
