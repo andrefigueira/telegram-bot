@@ -17,10 +17,19 @@ class HealthCheckServer:
     def __init__(self, db: Database):
         self.db = db
         self.app = web.Application()
+        self.app.router.add_get("/", self.root)
         self.app.router.add_get("/health", self.health_check)
         self.app.router.add_get("/ready", self.readiness_check)
         self.runner = None
-        
+
+    async def root(self, request: web.Request) -> web.Response:
+        """Root endpoint with API info."""
+        return web.json_response({
+            "name": "Telegram Bot API",
+            "version": "1.0.0",
+            "endpoints": ["/", "/health", "/ready"]
+        })
+
     async def health_check(self, request: web.Request) -> web.Response:
         """Basic health check - service is running."""
         return web.json_response({"status": "healthy"})
