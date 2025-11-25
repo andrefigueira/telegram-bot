@@ -73,7 +73,7 @@ def build_app() -> Application:
         pattern=r"^menu:"
     ))
     application.add_handler(CallbackQueryHandler(
-        user.handle_setup_callback,
+        lambda u, c: user.handle_setup_callback(u, c, vendors),
         pattern=r"^setup:"
     ))
     application.add_handler(CallbackQueryHandler(
@@ -93,10 +93,26 @@ def build_app() -> Application:
         pattern=r"^order:"
     ))
 
-    # Message handler for text input (setup flows, delivery address)
+    # Admin/Vendor callback handlers
+    application.add_handler(CallbackQueryHandler(
+        lambda u, c: admin.handle_admin_callback(u, c, catalog, vendors),
+        pattern=r"^admin:"
+    ))
+    application.add_handler(CallbackQueryHandler(
+        lambda u, c: admin.handle_vendor_callback(u, c, catalog, vendors),
+        pattern=r"^vendor:"
+    ))
+
+    # Message handler for text input (setup flows, delivery address, product creation)
+    async def handle_all_text_input(update, context):
+        # Try admin text input first (for product creation/editing)
+        await admin.handle_admin_text_input(update, context, catalog, vendors)
+        # Then user text input (for setup flows, delivery address)
+        await user.handle_text_input(update, context, orders, catalog)
+
     application.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND,
-        lambda u, c: user.handle_text_input(u, c, orders, catalog)
+        handle_all_text_input
     ))
 
     # Store services in application context

@@ -56,8 +56,8 @@ class TestMain:
         # Verify bot built with token
         mock_builder.token.assert_called_once_with("test_token")
         
-        # Verify handlers added (12 commands + 6 callbacks + 1 message handler = 19)
-        assert mock_app.add_handler.call_count == 19
+        # Verify handlers added (12 commands + 8 callbacks + 1 message handler = 21)
+        assert mock_app.add_handler.call_count == 21
         mock_app.add_error_handler.assert_called_once()
         
         # Verify bot_data set

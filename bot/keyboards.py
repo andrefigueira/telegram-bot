@@ -38,15 +38,22 @@ def help_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(keyboard)
 
 
-def setup_keyboard() -> InlineKeyboardMarkup:
+def setup_keyboard(is_vendor: bool = False) -> InlineKeyboardMarkup:
     """Setup menu keyboard."""
-    keyboard = [
+    keyboard = []
+
+    if not is_vendor:
+        keyboard.append([InlineKeyboardButton("Become a Vendor", callback_data="setup:become_vendor")])
+    else:
+        keyboard.append([InlineKeyboardButton("Manage My Products", callback_data="admin:products")])
+
+    keyboard.extend([
         [InlineKeyboardButton("Set Payment Methods", callback_data="setup:payments")],
         [InlineKeyboardButton("Set Shop Name", callback_data="setup:shopname")],
         [InlineKeyboardButton("Set Wallet Address", callback_data="setup:wallet")],
         [InlineKeyboardButton("View My Settings", callback_data="setup:view")],
         [InlineKeyboardButton("Back to Menu", callback_data="menu:main")],
-    ]
+    ])
     return InlineKeyboardMarkup(keyboard)
 
 
@@ -210,12 +217,60 @@ def admin_menu_keyboard() -> InlineKeyboardMarkup:
     keyboard = [
         [
             InlineKeyboardButton("Add Product", callback_data="admin:add_product"),
-            InlineKeyboardButton("Manage Products", callback_data="admin:products"),
+            InlineKeyboardButton("My Products", callback_data="admin:products"),
         ],
         [
             InlineKeyboardButton("View Orders", callback_data="admin:orders"),
-            InlineKeyboardButton("Settings", callback_data="admin:settings"),
+            InlineKeyboardButton("Shop Settings", callback_data="admin:settings"),
         ],
         [InlineKeyboardButton("Back to Menu", callback_data="menu:main")],
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+
+def vendor_products_keyboard(products: list) -> InlineKeyboardMarkup:
+    """Vendor's product management keyboard."""
+    keyboard = []
+
+    for p in products[:10]:
+        status = "Active" if p.inventory > 0 else "Out"
+        keyboard.append([
+            InlineKeyboardButton(
+                f"{p.name} ({p.inventory}) - {status}",
+                callback_data=f"vendor:edit:{p.id}"
+            )
+        ])
+
+    keyboard.append([InlineKeyboardButton("+ Add New Product", callback_data="vendor:add")])
+    keyboard.append([InlineKeyboardButton("Back", callback_data="menu:admin")])
+    return InlineKeyboardMarkup(keyboard)
+
+
+def product_edit_keyboard(product_id: int) -> InlineKeyboardMarkup:
+    """Product edit options keyboard."""
+    keyboard = [
+        [
+            InlineKeyboardButton("Edit Name", callback_data=f"vendor:edit_name:{product_id}"),
+            InlineKeyboardButton("Edit Price", callback_data=f"vendor:edit_price:{product_id}"),
+        ],
+        [
+            InlineKeyboardButton("Edit Stock", callback_data=f"vendor:edit_stock:{product_id}"),
+            InlineKeyboardButton("Edit Description", callback_data=f"vendor:edit_desc:{product_id}"),
+        ],
+        [
+            InlineKeyboardButton("Delete Product", callback_data=f"vendor:delete:{product_id}"),
+        ],
+        [InlineKeyboardButton("Back to Products", callback_data="admin:products")],
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+
+def confirm_delete_keyboard(product_id: int) -> InlineKeyboardMarkup:
+    """Confirm product deletion keyboard."""
+    keyboard = [
+        [
+            InlineKeyboardButton("Yes, Delete", callback_data=f"vendor:confirm_delete:{product_id}"),
+            InlineKeyboardButton("Cancel", callback_data=f"vendor:edit:{product_id}"),
+        ],
     ]
     return InlineKeyboardMarkup(keyboard)

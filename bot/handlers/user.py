@@ -20,6 +20,8 @@ from ..keyboards import (
     payment_methods_keyboard,
     SUPPORTED_COINS,
 )
+from ..services.vendors import VendorService
+from ..models import Vendor
 
 
 HELP_TEXT = """
@@ -265,7 +267,7 @@ async def handle_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         )
 
 
-async def handle_setup_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def handle_setup_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, vendors: VendorService = None) -> None:
     """Handle setup menu button callbacks."""
     query = update.callback_query
     await query.answer()
@@ -273,12 +275,44 @@ async def handle_setup_callback(update: Update, context: ContextTypes.DEFAULT_TY
     data = query.data
     action = data.split(":")[1] if ":" in data else data
 
+    user_id = update.effective_user.id
+    is_vendor = False
+    if vendors:
+        vendor = vendors.get_by_telegram_id(user_id)
+        is_vendor = vendor is not None
+
     if action == "main":
         await query.edit_message_text(
             SETUP_INTRO,
             parse_mode='Markdown',
-            reply_markup=setup_keyboard()
+            reply_markup=setup_keyboard(is_vendor)
         )
+    elif action == "become_vendor" and vendors:
+        if is_vendor:
+            await query.edit_message_text(
+                "*You're already a vendor!*\n\n"
+                "Use 'Manage My Products' to add and edit products.",
+                parse_mode='Markdown',
+                reply_markup=setup_keyboard(True)
+            )
+        else:
+            # Register user as vendor
+            user = update.effective_user
+            vendor_name = user.full_name or user.username or f"Vendor_{user_id}"
+            new_vendor = Vendor(telegram_id=user_id, name=vendor_name)
+            vendors.add_vendor(new_vendor)
+
+            await query.edit_message_text(
+                "*Congratulations!*\n\n"
+                f"You are now registered as a vendor: *{vendor_name}*\n\n"
+                "You can now:\n"
+                "- Add and manage products\n"
+                "- Set your payment preferences\n"
+                "- Configure your shop\n\n"
+                "Start by adding your first product!",
+                parse_mode='Markdown',
+                reply_markup=setup_keyboard(True)
+            )
     elif action == "payments":
         # Get current payment methods from user data or defaults
         selected = context.user_data.get('accepted_payments', ['XMR'])
@@ -310,14 +344,17 @@ async def handle_setup_callback(update: Update, context: ContextTypes.DEFAULT_TY
         wallet = context.user_data.get('wallet_address', 'Not set')
         payments = context.user_data.get('accepted_payments', ['XMR'])
         payments_str = ', '.join(payments)
+        vendor_status = "Yes" if is_vendor else "No"
 
+        wallet_display = f"`{wallet[:20]}...`" if wallet != 'Not set' else wallet
         await query.edit_message_text(
             f"*Your Settings*\n\n"
+            f"*Vendor:* {vendor_status}\n"
             f"*Shop Name:* {shop_name}\n"
-            f"*Wallet:* `{wallet[:20]}...`\n" if wallet != 'Not set' else f"*Wallet:* {wallet}\n"
+            f"*Wallet:* {wallet_display}\n"
             f"*Payment Methods:* {payments_str}",
             parse_mode='Markdown',
-            reply_markup=setup_keyboard()
+            reply_markup=setup_keyboard(is_vendor)
         )
 
 
@@ -477,6 +514,85 @@ async def handle_order_callback(update: Update, context: ContextTypes.DEFAULT_TY
             parse_mode='Markdown',
             reply_markup=order_confirmation_keyboard(order_id)
         )
+
+    elif action == "pay" and orders and len(parts) >= 4:
+        order_id = int(parts[2])
+        coin = parts[3]
+
+        # Get payment details from order service
+        try:
+            payment_info = orders.get_payment_info(order_id, coin)
+            await query.edit_message_text(
+                f"*Order #{order_id} - Pay with {coin}*\n\n"
+                f"*Amount:* `{payment_info.get('amount', 'N/A')}` {coin}\n"
+                f"*Send to:* `{payment_info.get('address', 'N/A')}`\n\n"
+                f"Please send the exact amount to complete your order.\n"
+                f"Payment will be confirmed automatically.",
+                parse_mode='Markdown',
+                reply_markup=order_confirmation_keyboard(order_id)
+            )
+        except Exception:
+            await query.edit_message_text(
+                f"*Order #{order_id} - Pay with {coin}*\n\n"
+                f"Payment address is being generated...\n"
+                f"Please check back in a moment.",
+                parse_mode='Markdown',
+                reply_markup=order_confirmation_keyboard(order_id)
+            )
+
+    elif action == "cancel":
+        order_id = int(parts[2])
+        from ..keyboards import confirm_cancel_keyboard
+        await query.edit_message_text(
+            f"*Cancel Order #{order_id}?*\n\n"
+            f"Are you sure you want to cancel this order?",
+            parse_mode='Markdown',
+            reply_markup=confirm_cancel_keyboard(order_id)
+        )
+
+    elif action == "confirm_cancel" and orders:
+        order_id = int(parts[2])
+        try:
+            orders.cancel_order(order_id)
+            await query.edit_message_text(
+                f"*Order #{order_id} Cancelled*\n\n"
+                f"Your order has been cancelled.",
+                parse_mode='Markdown',
+                reply_markup=main_menu_keyboard()
+            )
+        except Exception:
+            await query.edit_message_text(
+                f"Could not cancel order #{order_id}.",
+                reply_markup=main_menu_keyboard()
+            )
+
+    elif action == "view" and orders:
+        order_id = int(parts[2])
+        try:
+            order_info = orders.get_order(order_id)
+            if order_info:
+                # Get delivery address (decrypted)
+                delivery_addr = orders.get_address(order_info)
+                addr_display = delivery_addr[:30] + "..." if len(delivery_addr) > 30 else delivery_addr
+
+                await query.edit_message_text(
+                    f"*Order #{order_id}*\n\n"
+                    f"*Status:* {order_info.state}\n"
+                    f"*Quantity:* {order_info.quantity}\n"
+                    f"*Address:* {addr_display}",
+                    parse_mode='Markdown',
+                    reply_markup=order_confirmation_keyboard(order_id)
+                )
+            else:
+                await query.edit_message_text(
+                    f"Order #{order_id} not found.",
+                    reply_markup=main_menu_keyboard()
+                )
+        except Exception:
+            await query.edit_message_text(
+                f"Could not load order #{order_id}.",
+                reply_markup=main_menu_keyboard()
+            )
 
 
 async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE, orders: OrderService = None, catalog: CatalogService = None) -> None:

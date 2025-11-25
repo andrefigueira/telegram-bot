@@ -104,6 +104,36 @@ class OrderService:
         with self.db.session() as session:
             return session.get(Order, order_id)
 
+    def get_payment_info(self, order_id: int, coin: str = "XMR") -> dict:
+        """Get payment info for an order."""
+        with self.db.session() as session:
+            order = session.get(Order, order_id)
+            if not order:
+                raise ValueError("Order not found")
+
+            product = session.get(Product, order.product_id)
+            if not product:
+                raise ValueError("Product not found")
+
+            total_xmr = product.price_xmr * order.quantity
+
+            # For XMR, use the existing payment address
+            if coin == "XMR":
+                # Regenerate payment address from payment_id
+                payment_address, _ = self.payments.create_address()
+                return {
+                    "amount": total_xmr,
+                    "address": payment_address,
+                    "coin": "XMR"
+                }
+
+            # For other coins, return placeholder (crypto swap integration needed)
+            return {
+                "amount": total_xmr,
+                "address": "Payment address pending...",
+                "coin": coin
+            }
+
     def fulfill_order(self, order_id: int) -> Order:
         """Mark a paid order as fulfilled."""
         with self.db.session() as session:
