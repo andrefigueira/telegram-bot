@@ -38,9 +38,11 @@ class OrderService:
         vendor = self.vendors.get_vendor(product.vendor_id)
         if not vendor:
             raise ValueError("Vendor not found")
-        
-        # Create payment address
-        payment_address, payment_id = self.payments.create_address()
+
+        # Create payment address - use vendor's wallet if RPC not available
+        payment_address, payment_id = self.payments.create_address(
+            vendor_wallet=vendor.wallet_address
+        )
         
         # Calculate total and commission
         total_xmr = product.price_xmr * quantity

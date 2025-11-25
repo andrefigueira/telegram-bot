@@ -161,8 +161,9 @@ async def order(update: Update, context: ContextTypes.DEFAULT_TYPE, orders: Orde
     payment_msg = (
         f"*Order #{order_data['order_id']} Created!*\n\n"
         f"*Amount:* `{order_data['total_xmr']}` XMR\n"
-        f"*Send to:* `{order_data['payment_address']}`\n\n"
-        f"Please send the exact amount to the address above.\n"
+        f"*Send to:* `{order_data['payment_address']}`\n"
+        f"*Payment ID:* `{order_data['payment_id']}`\n\n"
+        f"Include the Payment ID in your transaction.\n"
         f"Your order will be processed once payment is confirmed."
     )
 

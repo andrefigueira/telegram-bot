@@ -31,27 +31,37 @@ class MoneroPaymentService:
                 raise RetryableError("Monero wallet connection failed")
         return self._wallet
     
-    def create_address(self) -> Tuple[str, str]:
-        """Create a new payment address with unique payment ID."""
-        payment_id = uuid.uuid4().hex
+    def create_address(self, vendor_wallet: Optional[str] = None) -> Tuple[str, str]:
+        """Create a new payment address with unique payment ID.
 
-        try:
-            wallet = self._get_wallet()
-            if wallet:
-                # Create integrated address with payment ID
-                address = wallet.make_integrated_address(payment_id=payment_id)
-                return str(address), payment_id
-        except Exception as e:
-            logger.error(f"Failed to create Monero address: {e}")
+        Args:
+            vendor_wallet: Optional vendor wallet address to use as fallback
+        """
+        payment_id = uuid.uuid4().hex[:16]  # 16 char payment ID for Monero
 
-        # Fallback for development/testing or when RPC not configured
-        if self.settings.environment == "development" or not self.settings.monero_rpc_url:
-            # Generate a realistic-looking mock address for demo purposes
+        # Try RPC first if configured
+        if self.settings.monero_rpc_url:
+            try:
+                wallet = self._get_wallet()
+                if wallet:
+                    # Create integrated address with payment ID
+                    address = wallet.make_integrated_address(payment_id=payment_id)
+                    return str(address), payment_id
+            except Exception as e:
+                logger.error(f"Failed to create Monero address via RPC: {e}")
+
+        # Use vendor's wallet address if available
+        if vendor_wallet:
+            logger.info(f"Using vendor wallet address with payment ID: {payment_id}")
+            return vendor_wallet, payment_id
+
+        # Final fallback for development/testing
+        if self.settings.environment == "development":
             mock_address = f"4{payment_id}{'A' * (95 - len(payment_id) - 1)}"
-            logger.warning(f"Using mock payment address (no Monero RPC configured)")
+            logger.warning(f"Using mock payment address (development mode)")
             return mock_address, payment_id
 
-        raise RetryableError("Failed to create payment address")
+        raise RetryableError("Failed to create payment address - vendor wallet not configured")
     
     def check_paid(self, payment_id: str, expected_amount: Optional[Decimal] = None) -> bool:
         """Check if payment has been received."""
