@@ -7,30 +7,64 @@ from telegram.ext import ContextTypes
 
 from ..services.catalog import CatalogService
 from ..services.orders import OrderService
+from ..error_handler import handle_errors
 
 
+@handle_errors
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Greet the user."""
     await update.message.reply_text("Welcome to the shop!")
 
 
+@handle_errors
 async def list_products(update: Update, context: ContextTypes.DEFAULT_TYPE, catalog: CatalogService) -> None:
     """List available products or search results."""
     query = context.args[0] if context.args else ""
     products = catalog.search(query) if query else catalog.list_products()
     if not products:
-        await update.message.reply_text("No products.")
+        await update.message.reply_text("No products found.")
         return
-    lines = [f"{p.id}: {p.name} ({p.price_xmr} XMR)" for p in products]
+    
+    # Format product list
+    lines = ["📦 Available Products:"]
+    for p in products:
+        stock_status = "✅ In Stock" if p.inventory > 0 else "❌ Out of Stock"
+        lines.append(f"\nID: {p.id}\n{p.name}\nPrice: {p.price_xmr} XMR\n{stock_status}")
+    
     await update.message.reply_text("\n".join(lines))
 
 
+@handle_errors
 async def order(update: Update, context: ContextTypes.DEFAULT_TYPE, orders: OrderService) -> None:
     """Create an order."""
     args = context.args
     if len(args) < 3:
-        await update.message.reply_text("Usage: /order <product_id> <qty> <address>")
+        await update.message.reply_text(
+            "Usage: /order <product_id> <quantity> <delivery_address>\n\n"
+            "Example: /order 1 2 My delivery address here"
+        )
         return
-    prod_id, qty, addr = int(args[0]), int(args[1]), args[2]
-    order = orders.create_order(prod_id, qty, addr)
-    await update.message.reply_text(f"Order {order.id} created. Pay to {order.payment_id}")
+    
+    try:
+        prod_id = int(args[0])
+        qty = int(args[1])
+    except ValueError:
+        await update.message.reply_text("Invalid product ID or quantity. Please use numbers.")
+        return
+    
+    # Join all remaining args as address
+    addr = " ".join(args[2:])
+    
+    # Create order
+    order_data = orders.create_order(prod_id, qty, addr)
+    
+    # Send payment instructions
+    payment_msg = (
+        f"✅ Order #{order_data['order_id']} created!\n\n"
+        f"💰 Amount: {order_data['total_xmr']} XMR\n"
+        f"📍 Send to: `{order_data['payment_address']}`\n\n"
+        f"Please send the exact amount to the address above.\n"
+        f"Your order will be processed once payment is confirmed."
+    )
+    
+    await update.message.reply_text(payment_msg, parse_mode='Markdown')

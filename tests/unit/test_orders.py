@@ -31,29 +31,37 @@ def test_create_and_mark_paid(monkeypatch, tmp_path) -> None:
     payments = PaymentService()
     orders = OrderService(db, payments, catalog, vendors)
     product = catalog.add_product(
-        Product(name="p", description="", price_xmr=1.0, inventory=1, vendor_id=vendor.id)
+        Product(name="p", description="", price_xmr=1.0, inventory=10, vendor_id=vendor.id)
     )
-    order = orders.create_order(product.id, 1, "addr")
+    order_data = orders.create_order(product.id, 1, "addr")
+    order_id = order_data["order_id"]
+    assert order_data["total_xmr"] == 1.0
+    assert order_data["quantity"] == 1
+    
+    # Get the actual order object for testing
+    order = orders.get_order(order_id)
     assert order.commission_xmr == pytest.approx(0.05)
     assert orders.get_address(order) == "addr"
-    updated = orders.mark_paid(order.id)
+    
+    updated = orders.mark_paid(order_id)
     assert updated.state == "PAID"
-    fetched = orders.get_order(order.id)
+    fetched = orders.get_order(order_id)
     assert fetched is not None
-    orders.fulfill_order(order.id)
-    assert orders.get_order(order.id).state == "FULFILLED"
-    orders.cancel_order(order.id)
-    assert orders.get_order(order.id).state == "CANCELLED"
-    assert orders.list_orders()[0].id == order.id
+    orders.fulfill_order(order_id)
+    assert orders.get_order(order_id).state == "FULFILLED"
+    orders.cancel_order(order_id)
+    assert orders.get_order(order_id).state == "CANCELLED"
+    assert orders.list_orders()[0].id == order_id
     # Purge old orders
     # mark as old
     with db.session() as session:
-        outdated = session.get(type(order), order.id)
+        from bot.models import Order
+        outdated = session.get(Order, order_id)
         outdated.created_at = datetime.utcnow() - timedelta(days=31)
         session.add(outdated)
         session.commit()
     orders.purge_old_orders()
-    assert orders.get_order(order.id) is None
+    assert orders.get_order(order_id) is None
 
 
 def test_create_order_errors(tmp_path) -> None:
@@ -62,15 +70,23 @@ def test_create_order_errors(tmp_path) -> None:
     catalog = CatalogService(db)
     payments = PaymentService()
     orders = OrderService(db, payments, catalog, vendors)
-    with pytest.raises(ValueError):
+    
+    # Test product not found
+    with pytest.raises(ValueError, match="Product not found"):
         orders.create_order(1, 1, "a")
+    
     vend = vendors.add_vendor(Vendor(telegram_id=2, name="v"))
     product = catalog.add_product(
         Product(name="p", description="", price_xmr=1.0, inventory=1, vendor_id=vend.id)
     )
+    
+    # Test insufficient inventory
+    with pytest.raises(ValueError, match="Insufficient inventory"):
+        orders.create_order(product.id, 2, "a")
+    
     # remove vendor to trigger not found
     with db.session() as s:
         s.delete(vend)
         s.commit()
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Vendor not found"):
         orders.create_order(product.id, 1, "a")

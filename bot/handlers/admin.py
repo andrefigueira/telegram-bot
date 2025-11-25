@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -9,12 +10,15 @@ from ..services.catalog import CatalogService
 from ..services.vendors import VendorService
 from ..models import Product, Vendor
 from ..config import get_settings
+from ..error_handler import handle_errors
 import pyotp
+
+logger = logging.getLogger(__name__)
 
 
 def _is_admin(user_id: int, token: str | None = None) -> bool:
     settings = get_settings()
-    allowed = user_id in settings.admin_ids or user_id in settings.super_admin_ids
+    allowed = user_id in settings.admin_ids_list or user_id in settings.super_admin_ids_list
     if not allowed:
         return False
     if settings.totp_secret:
@@ -26,7 +30,7 @@ def _is_admin(user_id: int, token: str | None = None) -> bool:
 
 def _is_super_admin(user_id: int, token: str | None = None) -> bool:
     settings = get_settings()
-    if user_id not in settings.super_admin_ids:
+    if user_id not in settings.super_admin_ids_list:
         return False
     if settings.totp_secret:
         if token is None:

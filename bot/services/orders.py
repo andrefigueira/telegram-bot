@@ -29,16 +29,27 @@ class OrderService:
         self.vendors = vendors
         self.settings = get_settings()
 
-    def create_order(self, product_id: int, quantity: int, address: str) -> Order:
+    def create_order(self, product_id: int, quantity: int, address: str) -> dict:
         product = self.catalog.get_product(product_id)
         if not product:
             raise ValueError("Product not found")
+        if product.inventory < quantity:
+            raise ValueError(f"Insufficient inventory. Only {product.inventory} available.")
         vendor = self.vendors.get_vendor(product.vendor_id)
         if not vendor:
             raise ValueError("Vendor not found")
-        _, payment_id = self.payments.create_address()
+        
+        # Create payment address
+        payment_address, payment_id = self.payments.create_address()
+        
+        # Calculate total and commission
+        total_xmr = product.price_xmr * quantity
+        commission = total_xmr * vendor.commission_rate
+        
+        # Encrypt delivery address
         encrypted = encrypt(address, self.settings.encryption_key)
-        commission = product.price_xmr * quantity * vendor.commission_rate
+        
+        # Create order
         order = Order(
             product_id=product_id,
             vendor_id=vendor.id,
@@ -47,11 +58,34 @@ class OrderService:
             address_encrypted=encrypted,
             commission_xmr=commission,
         )
+        
+        # Save to database
         with self.db.session() as session:
+            # Get product in this session
+            product_in_session = session.get(Product, product_id)
+            if not product_in_session:
+                raise ValueError("Product not found")
+                
+            # Update inventory
+            product_in_session.inventory -= quantity
+            if product_in_session.inventory < 0:
+                raise ValueError("Insufficient inventory")
+                
+            # Save order
             session.add(order)
+            session.add(product_in_session)
             session.commit()
             session.refresh(order)
-        return order
+        
+        # Return order details for user
+        return {
+            "order_id": order.id,
+            "payment_address": payment_address,
+            "payment_id": payment_id,
+            "total_xmr": total_xmr,
+            "product_name": product.name,
+            "quantity": quantity
+        }
 
     def mark_paid(self, order_id: int) -> Order:
         with self.db.session() as session:

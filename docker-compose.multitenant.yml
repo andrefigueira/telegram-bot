@@ -1,0 +1,76 @@
+version: '3.8'
+
+services:
+  # API Backend (FastAPI)
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: uvicorn bot.api.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://darkpool:${DB_PASSWORD}@postgres:5432/darkpool
+      - JWT_SECRET=${JWT_SECRET}
+      - PLATFORM_ENCRYPTION_KEY=${PLATFORM_ENCRYPTION_KEY}
+      - PLATFORM_XMR_ADDRESS=${PLATFORM_XMR_ADDRESS}
+      - TROCADOR_API_KEY=${TROCADOR_API_KEY}
+      - CHANGENOW_API_KEY=${CHANGENOW_API_KEY}
+      - TESTNET=${TESTNET:-true}
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Bot Manager (runs tenant bots + background tasks)
+  bot-manager:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python -m bot.main_multitenant
+    environment:
+      - DATABASE_URL=postgresql://darkpool:${DB_PASSWORD}@postgres:5432/darkpool
+      - PLATFORM_ENCRYPTION_KEY=${PLATFORM_ENCRYPTION_KEY}
+      - PLATFORM_XMR_ADDRESS=${PLATFORM_XMR_ADDRESS}
+      - TROCADOR_API_KEY=${TROCADOR_API_KEY}
+      - CHANGENOW_API_KEY=${CHANGENOW_API_KEY}
+      - TESTNET=${TESTNET:-true}
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=darkpool
+      - POSTGRES_USER=darkpool
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U darkpool"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis (for caching, optional)
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+  redis_data:

@@ -1,0 +1,20 @@
+# Copy this file to terraform.tfvars and fill in your values
+# NEVER commit terraform.tfvars to git
+
+do_token = "your-digitalocean-api-token"
+
+project_name = "telegram-bot"
+region       = "lon1"  # London, change to nearest: nyc1, sfo3, ams3, sgp1, etc.
+droplet_size = "s-1vcpu-1gb"  # $6/month, upgrade to s-1vcpu-2gb for $12/month
+
+ssh_public_key_path = "~/.ssh/id_rsa.pub"
+ssh_allowed_ips     = ["0.0.0.0/0"]  # Restrict to your IP for security
+
+github_repo = "your-username/telegram-bot"
+environment = "production"
+
+# Bot configuration
+telegram_token = "your-telegram-bot-token"
+encryption_key = "your-base64-encryption-key"
+monero_rpc_url = ""  # Leave empty if not using Monero yet
+admin_ids      = "123456789"  # Your Telegram user ID

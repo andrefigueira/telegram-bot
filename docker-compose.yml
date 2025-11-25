@@ -1,7 +1,51 @@
-version: '3'
+version: '3.8'
+
 services:
   bot:
-    build: .
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    image: telegram-ecommerce-bot:latest
+    container_name: telegram-bot
     env_file:
       - .env
+    environment:
+      - ENVIRONMENT=production
+      - DATABASE_URL=sqlite:////app/data/db.sqlite3
+      - LOG_FILE=/app/logs/bot.log
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    ports:
+      - "8080:8080"  # Health check port
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - bot-network
+
+  # Optional: Monero node for production
+  # monero:
+  #   image: monerod:latest
+  #   container_name: monero-node
+  #   volumes:
+  #     - ./monero-data:/home/monero/.bitmonero
+  #   ports:
+  #     - "18080:18080"
+  #     - "18081:18081"
+  #   restart: unless-stopped
+  #   networks:
+  #     - bot-network
+
+networks:
+  bot-network:
+    driver: bridge
