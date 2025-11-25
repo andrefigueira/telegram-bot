@@ -291,6 +291,7 @@ async def handle_setup_callback(update: Update, context: ContextTypes.DEFAULT_TY
 
     user_id = update.effective_user.id
     is_vendor = False
+    vendor = None
     if vendors:
         vendor = vendors.get_by_telegram_id(user_id)
         is_vendor = vendor is not None
