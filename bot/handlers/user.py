@@ -608,14 +608,24 @@ async def handle_order_callback(update: Update, context: ContextTypes.DEFAULT_TY
             parse_mode='Markdown'
         )
 
-    elif action == "status":
+    elif action == "status" and orders:
         order_id = int(parts[2])
-        await query.edit_message_text(
-            f"*Order #{order_id}*\n\n"
-            f"Checking payment status...",
-            parse_mode='Markdown',
-            reply_markup=order_confirmation_keyboard(order_id)
-        )
+        order = orders.get_order(order_id)
+        if order:
+            status_emoji = {"NEW": "Awaiting payment", "PAID": "Payment received", "FULFILLED": "Completed", "CANCELLED": "Cancelled"}.get(order.state, order.state)
+            try:
+                await query.edit_message_text(
+                    f"*Order #{order_id}*\n\n"
+                    f"*Status:* {status_emoji}\n"
+                    f"*Created:* {order.created_at.strftime('%Y-%m-%d %H:%M')}",
+                    parse_mode='Markdown',
+                    reply_markup=order_confirmation_keyboard(order_id)
+                )
+            except Exception:
+                # Message unchanged, just answer the query
+                await query.answer("Status unchanged", show_alert=False)
+        else:
+            await query.answer("Order not found", show_alert=True)
 
     elif action == "pay" and orders and len(parts) >= 4:
         order_id = int(parts[2])
