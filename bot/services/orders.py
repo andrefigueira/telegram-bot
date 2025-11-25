@@ -40,6 +40,9 @@ class OrderService:
             raise ValueError("Vendor not found")
 
         # Check if vendor has wallet configured (required for payments)
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"Creating order - Vendor {vendor.id} wallet: {vendor.wallet_address}")
         if not vendor.wallet_address and not self.settings.monero_rpc_url:
             raise ValueError("Vendor has not configured their payment wallet yet")
 

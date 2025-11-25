@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from typing import List
 from sqlmodel import select
 
 from ..models import Vendor, Database
+
+logger = logging.getLogger(__name__)
 
 
 class VendorService:
@@ -60,16 +63,21 @@ class VendorService:
 
             if pricing_currency is not None:
                 vendor.pricing_currency = pricing_currency
+                logger.info(f"Updated vendor {vendor_id} pricing_currency to {pricing_currency}")
             if shop_name is not None:
                 vendor.shop_name = shop_name
+                logger.info(f"Updated vendor {vendor_id} shop_name to {shop_name}")
             if wallet_address is not None:
                 vendor.wallet_address = wallet_address
+                logger.info(f"Updated vendor {vendor_id} wallet_address to {wallet_address[:20]}...")
             if accepted_payments is not None:
                 vendor.accepted_payments = ",".join(accepted_payments)
+                logger.info(f"Updated vendor {vendor_id} accepted_payments to {accepted_payments}")
 
             session.add(vendor)
             session.commit()
             session.refresh(vendor)
+            logger.info(f"Vendor {vendor_id} settings saved. Wallet: {vendor.wallet_address}")
             return vendor
 
     def get_accepted_payments_list(self, vendor: Vendor) -> list[str]:
