@@ -31,7 +31,7 @@ resource "digitalocean_droplet" "bot" {
     monero_rpc_url     = var.monero_rpc_url
     admin_ids          = var.admin_ids
     environment        = var.environment
-    docker_compose_url = "https://raw.githubusercontent.com/${var.github_repo}/main/docker-compose.yml"
+    docker_compose_url = "https://raw.githubusercontent.com/${var.github_repo}/main/docker-compose.prod.yml"
   })
 
   tags = ["telegram-bot", var.environment]
