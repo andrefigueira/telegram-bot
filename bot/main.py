@@ -47,6 +47,7 @@ def build_app() -> Application:
     # Add command handlers
     application.add_handler(CommandHandler("start", user.start))
     application.add_handler(CommandHandler("list", lambda u, c: user.list_products(u, c, catalog)))
+    application.add_handler(CommandHandler("products", lambda u, c: user.list_products(u, c, catalog)))
     application.add_handler(CommandHandler("order", lambda u, c: user.order(u, c, orders)))
     application.add_handler(CommandHandler("add", lambda u, c: admin.add(u, c, catalog, vendors)))
     application.add_handler(CommandHandler("addvendor", lambda u, c: admin.add_vendor(u, c, vendors)))

@@ -13,7 +13,13 @@ from ..error_handler import handle_errors
 @handle_errors
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Greet the user."""
-    await update.message.reply_text("Welcome to the shop!")
+    welcome_msg = (
+        "Welcome to the shop!\n\n"
+        "Commands:\n"
+        "/products - Browse products\n"
+        "/order <id> <qty> <address> - Place order\n"
+    )
+    await update.message.reply_text(welcome_msg)
 
 
 @handle_errors
