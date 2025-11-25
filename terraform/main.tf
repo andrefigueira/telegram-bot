@@ -31,6 +31,7 @@ resource "digitalocean_droplet" "bot" {
     monero_rpc_url     = var.monero_rpc_url
     admin_ids          = var.admin_ids
     environment        = var.environment
+    domain             = var.domain
     docker_compose_url = "https://raw.githubusercontent.com/${var.github_repo}/main/docker-compose.prod.yml"
   })
 
@@ -45,6 +46,18 @@ resource "digitalocean_firewall" "bot" {
     protocol         = "tcp"
     port_range       = "22"
     source_addresses = var.ssh_allowed_ips
+  }
+
+  inbound_rule {
+    protocol         = "tcp"
+    port_range       = "80"
+    source_addresses = ["0.0.0.0/0", "::/0"]
+  }
+
+  inbound_rule {
+    protocol         = "tcp"
+    port_range       = "443"
+    source_addresses = ["0.0.0.0/0", "::/0"]
   }
 
   inbound_rule {

@@ -68,3 +68,9 @@ variable "admin_ids" {
   description = "Comma-separated Telegram admin IDs"
   type        = string
 }
+
+variable "domain" {
+  description = "Domain name for the API (e.g., api.darkpool.shop)"
+  type        = string
+  default     = ""
+}
