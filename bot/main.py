@@ -81,6 +81,10 @@ def build_app() -> Application:
         pattern=r"^pay:"
     ))
     application.add_handler(CallbackQueryHandler(
+        user.handle_currency_callback,
+        pattern=r"^currency:"
+    ))
+    application.add_handler(CallbackQueryHandler(
         lambda u, c: user.handle_products_callback(u, c, catalog),
         pattern=r"^products:"
     ))

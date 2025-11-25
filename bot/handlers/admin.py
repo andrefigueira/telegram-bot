@@ -17,6 +17,12 @@ from ..keyboards import (
     product_edit_keyboard,
     confirm_delete_keyboard,
     main_menu_keyboard,
+    SUPPORTED_CURRENCIES,
+)
+from ..services.currency import (
+    fiat_to_xmr_accurate,
+    format_price_simple,
+    get_currency_symbol,
 )
 import pyotp
 
@@ -395,42 +401,62 @@ async def handle_admin_text_input(
     text = update.message.text
 
     # New product creation flow
+    # Get vendor's currency setting
+    vendor_currency = context.user_data.get('pricing_currency', 'USD')
+    currency_symbol = get_currency_symbol(vendor_currency)
+
     if awaiting == 'product_name':
         context.user_data['new_product']['name'] = text
+        context.user_data['new_product']['currency'] = vendor_currency
         context.user_data['awaiting_input'] = 'product_price'
+
+        if vendor_currency == 'XMR':
+            price_prompt = "Step 2/4: Enter the price in XMR (e.g., 0.05):"
+        else:
+            price_prompt = f"Step 2/4: Enter the price in {vendor_currency} (e.g., 25.00):"
+
         await update.message.reply_text(
             "*Add New Product*\n\n"
             f"Name: {text}\n\n"
-            "Step 2/4: Enter the price in XMR (e.g., 0.05):",
+            f"{price_prompt}",
             parse_mode='Markdown'
         )
 
     elif awaiting == 'product_price':
         try:
             price = float(text)
+            product_currency = context.user_data['new_product'].get('currency', 'USD')
             context.user_data['new_product']['price'] = price
             context.user_data['awaiting_input'] = 'product_stock'
+
+            price_display = format_price_simple(price, product_currency)
             await update.message.reply_text(
                 "*Add New Product*\n\n"
                 f"Name: {context.user_data['new_product']['name']}\n"
-                f"Price: {price} XMR\n\n"
+                f"Price: {price_display}\n\n"
                 "Step 3/4: Enter the stock quantity:",
                 parse_mode='Markdown'
             )
         except ValueError:
             await update.message.reply_text(
-                "Invalid price. Please enter a number (e.g., 0.05):"
+                f"Invalid price. Please enter a number (e.g., 25.00):"
             )
 
     elif awaiting == 'product_stock':
         try:
             stock = int(text)
+            product_currency = context.user_data['new_product'].get('currency', 'USD')
             context.user_data['new_product']['stock'] = stock
             context.user_data['awaiting_input'] = 'product_desc'
+
+            price_display = format_price_simple(
+                context.user_data['new_product']['price'],
+                product_currency
+            )
             await update.message.reply_text(
                 "*Add New Product*\n\n"
                 f"Name: {context.user_data['new_product']['name']}\n"
-                f"Price: {context.user_data['new_product']['price']} XMR\n"
+                f"Price: {price_display}\n"
                 f"Stock: {stock}\n\n"
                 "Step 4/4: Enter a description (or send 'skip' for none):",
                 parse_mode='Markdown'
@@ -452,11 +478,26 @@ async def handle_admin_text_input(
 
         new_prod = context.user_data.get('new_product', {})
         desc = "" if text.lower() == 'skip' else text
+        product_currency = new_prod.get('currency', 'USD')
+        price_fiat = new_prod.get('price', 0)
+
+        # Convert to XMR for storage (use accurate conversion)
+        try:
+            price_xmr = await fiat_to_xmr_accurate(price_fiat, product_currency)
+        except ValueError as e:
+            await update.message.reply_text(
+                f"Error converting price: {e}\nPlease try again.",
+                reply_markup=main_menu_keyboard()
+            )
+            context.user_data['awaiting_input'] = None
+            return
 
         product = Product(
             name=new_prod.get('name', 'Unnamed'),
             description=desc,
-            price_xmr=new_prod.get('price', 0),
+            price_xmr=price_xmr,
+            price_fiat=price_fiat,
+            currency=product_currency,
             inventory=new_prod.get('stock', 0),
             vendor_id=vendor.id,
         )
@@ -466,10 +507,12 @@ async def handle_admin_text_input(
         context.user_data['new_product'] = None
 
         products = catalog.list_products_by_vendor(vendor.id)
+        price_display = format_price_simple(price_fiat, product_currency)
         await update.message.reply_text(
             f"*Product Added!*\n\n"
             f"*{product.name}*\n"
-            f"Price: {product.price_xmr} XMR\n"
+            f"Price: {price_display}\n"
+            f"(~{price_xmr:.6f} XMR at current rate)\n"
             f"Stock: {product.inventory}",
             parse_mode='Markdown',
             reply_markup=vendor_products_keyboard(products)

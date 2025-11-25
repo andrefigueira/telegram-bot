@@ -18,7 +18,10 @@ from ..keyboards import (
     payment_coin_keyboard,
     order_confirmation_keyboard,
     payment_methods_keyboard,
+    vendor_products_keyboard,
+    currency_keyboard,
     SUPPORTED_COINS,
+    SUPPORTED_CURRENCIES,
 )
 from ..services.vendors import VendorService
 from ..models import Vendor
@@ -265,6 +268,17 @@ async def handle_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             parse_mode='Markdown',
             reply_markup=help_keyboard()
         )
+    elif action == "admin":
+        # Show vendor's product management
+        user_id = update.effective_user.id
+        from ..keyboards import vendor_products_keyboard
+        # This requires vendors and catalog from context - redirect to setup for now
+        await query.edit_message_text(
+            "*Vendor Panel*\n\n"
+            "Use /setup to manage your products and settings.",
+            parse_mode='Markdown',
+            reply_markup=main_menu_keyboard()
+        )
 
 
 async def handle_setup_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, vendors: VendorService = None) -> None:
@@ -339,18 +353,30 @@ async def handle_setup_callback(update: Update, context: ContextTypes.DEFAULT_TY
             "This is where you'll receive payments.",
             parse_mode='Markdown'
         )
+    elif action == "currency":
+        current_currency = context.user_data.get('pricing_currency', 'USD')
+        await query.edit_message_text(
+            "*Pricing Currency*\n\n"
+            "Select the currency you want to use for product prices.\n\n"
+            "Customers will see prices in your currency, and we'll automatically\n"
+            "convert to crypto when they pay.",
+            parse_mode='Markdown',
+            reply_markup=currency_keyboard(current_currency)
+        )
     elif action == "view":
         shop_name = context.user_data.get('shop_name', 'Not set')
         wallet = context.user_data.get('wallet_address', 'Not set')
         payments = context.user_data.get('accepted_payments', ['XMR'])
         payments_str = ', '.join(payments)
         vendor_status = "Yes" if is_vendor else "No"
+        pricing_currency = context.user_data.get('pricing_currency', 'USD')
 
         wallet_display = f"`{wallet[:20]}...`" if wallet != 'Not set' else wallet
         await query.edit_message_text(
             f"*Your Settings*\n\n"
             f"*Vendor:* {vendor_status}\n"
             f"*Shop Name:* {shop_name}\n"
+            f"*Pricing Currency:* {pricing_currency}\n"
             f"*Wallet:* {wallet_display}\n"
             f"*Payment Methods:* {payments_str}",
             parse_mode='Markdown',
@@ -405,6 +431,39 @@ async def handle_payment_toggle_callback(update: Update, context: ContextTypes.D
         )
 
 
+async def handle_currency_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle currency selection callbacks."""
+    query = update.callback_query
+    await query.answer()
+
+    data = query.data
+    parts = data.split(":")
+
+    if len(parts) < 3:
+        return
+
+    action = parts[1]
+    currency = parts[2]
+
+    if action == "select":
+        context.user_data['pricing_currency'] = currency
+
+        # Get currency symbol
+        symbol = "$"
+        for code, name, sym in SUPPORTED_CURRENCIES:
+            if code == currency:
+                symbol = sym
+                break
+
+        await query.edit_message_text(
+            f"*Currency Set!*\n\n"
+            f"Your products will be priced in {symbol} ({currency}).\n\n"
+            f"When customers pay, we'll convert to their chosen crypto automatically.",
+            parse_mode='Markdown',
+            reply_markup=setup_keyboard()
+        )
+
+
 async def handle_products_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, catalog: CatalogService = None) -> None:
     """Handle product browsing callbacks."""
     query = update.callback_query
@@ -448,10 +507,19 @@ async def handle_product_callback(update: Update, context: ContextTypes.DEFAULT_
             in_stock = product.inventory > 0
             stock_status = f"{product.inventory} in stock" if in_stock else "Out of stock"
 
+            # Format price display
+            if product.price_fiat and product.currency and product.currency != "XMR":
+                symbol = {"USD": "$", "GBP": "£", "EUR": "€"}.get(product.currency, "$")
+                price_display = f"`{symbol}{product.price_fiat:.2f}` ({product.currency})"
+                xmr_note = f"\n_(~{product.price_xmr:.6f} XMR)_"
+            else:
+                price_display = f"`{product.price_xmr}` XMR"
+                xmr_note = ""
+
             await query.edit_message_text(
                 f"*{product.name}*\n\n"
                 f"{product.description or 'No description'}\n\n"
-                f"*Price:* `{product.price_xmr}` XMR\n"
+                f"*Price:* {price_display}{xmr_note}\n"
                 f"*Stock:* {stock_status}",
                 parse_mode='Markdown',
                 reply_markup=product_detail_keyboard(product_id, in_stock)

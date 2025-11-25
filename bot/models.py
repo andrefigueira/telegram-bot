@@ -16,7 +16,9 @@ class Product(SQLModel, table=True):
     name: str
     description: str
     category: Optional[str] = None
-    price_xmr: float
+    price_xmr: float  # Price in XMR (legacy or converted)
+    price_fiat: Optional[float] = None  # Price in fiat currency
+    currency: str = "XMR"  # Currency code (USD, GBP, EUR, XMR)
     media_id: Optional[str] = None
     inventory: int = 0
     vendor_id: int = Field(foreign_key="vendor.id")

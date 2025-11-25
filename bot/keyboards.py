@@ -14,6 +14,14 @@ SUPPORTED_COINS = [
     ("USDC", "USD Coin"),
 ]
 
+# Supported fiat currencies for product pricing
+SUPPORTED_CURRENCIES = [
+    ("USD", "US Dollar", "$"),
+    ("GBP", "British Pound", "£"),
+    ("EUR", "Euro", "€"),
+    ("XMR", "Monero", "XMR"),
+]
+
 
 def main_menu_keyboard() -> InlineKeyboardMarkup:
     """Main menu keyboard."""
@@ -49,6 +57,7 @@ def setup_keyboard(is_vendor: bool = False) -> InlineKeyboardMarkup:
 
     keyboard.extend([
         [InlineKeyboardButton("Set Payment Methods", callback_data="setup:payments")],
+        [InlineKeyboardButton("Set Pricing Currency", callback_data="setup:currency")],
         [InlineKeyboardButton("Set Shop Name", callback_data="setup:shopname")],
         [InlineKeyboardButton("Set Wallet Address", callback_data="setup:wallet")],
         [InlineKeyboardButton("View My Settings", callback_data="setup:view")],
@@ -79,6 +88,34 @@ def payment_methods_keyboard(selected: Optional[List[str]] = None) -> InlineKeyb
     return InlineKeyboardMarkup(keyboard)
 
 
+def currency_keyboard(current: str = "USD") -> InlineKeyboardMarkup:
+    """Currency selection keyboard for product pricing."""
+    keyboard = []
+    for code, name, symbol in SUPPORTED_CURRENCIES:
+        check = ">" if code == current else " "
+        keyboard.append([
+            InlineKeyboardButton(
+                f"{check} {symbol} {name} ({code})",
+                callback_data=f"currency:select:{code}"
+            )
+        ])
+
+    keyboard.append([
+        InlineKeyboardButton("Back", callback_data="setup:main"),
+    ])
+    return InlineKeyboardMarkup(keyboard)
+
+
+def _format_product_price(product) -> str:
+    """Format product price for display."""
+    # If product has fiat price, show that
+    if hasattr(product, 'price_fiat') and product.price_fiat and product.currency != "XMR":
+        symbol = {"USD": "$", "GBP": "£", "EUR": "€"}.get(product.currency, "$")
+        return f"{symbol}{product.price_fiat:.2f}"
+    # Otherwise show XMR price
+    return f"{product.price_xmr} XMR"
+
+
 def products_keyboard(products: list, page: int = 0, per_page: int = 5) -> InlineKeyboardMarkup:
     """Product listing with pagination."""
     keyboard = []
@@ -89,9 +126,10 @@ def products_keyboard(products: list, page: int = 0, per_page: int = 5) -> Inlin
 
     for p in page_products:
         stock = "In Stock" if p.inventory > 0 else "Out of Stock"
+        price_display = _format_product_price(p)
         keyboard.append([
             InlineKeyboardButton(
-                f"{p.name} - {p.price_xmr} XMR ({stock})",
+                f"{p.name} - {price_display} ({stock})",
                 callback_data=f"product:view:{p.id}"
             )
         ])
@@ -234,9 +272,10 @@ def vendor_products_keyboard(products: list) -> InlineKeyboardMarkup:
 
     for p in products[:10]:
         status = "Active" if p.inventory > 0 else "Out"
+        price_display = _format_product_price(p)
         keyboard.append([
             InlineKeyboardButton(
-                f"{p.name} ({p.inventory}) - {status}",
+                f"{p.name} - {price_display} ({p.inventory}) {status}",
                 callback_data=f"vendor:edit:{p.id}"
             )
         ])
