@@ -39,6 +39,10 @@ class OrderService:
         if not vendor:
             raise ValueError("Vendor not found")
 
+        # Check if vendor has wallet configured (required for payments)
+        if not vendor.wallet_address and not self.settings.monero_rpc_url:
+            raise ValueError("Vendor has not configured their payment wallet yet")
+
         # Create payment address - use vendor's wallet if RPC not available
         payment_address, payment_id = self.payments.create_address(
             vendor_wallet=vendor.wallet_address
