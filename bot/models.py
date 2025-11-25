@@ -67,12 +67,12 @@ class Database:
         from sqlalchemy import text, inspect
 
         inspector = inspect(self.engine)
+        migrations = []
 
         # Check if vendor table exists and add missing columns
         if 'vendor' in inspector.get_table_names():
             columns = [col['name'] for col in inspector.get_columns('vendor')]
 
-            migrations = []
             if 'pricing_currency' not in columns:
                 migrations.append("ALTER TABLE vendor ADD COLUMN pricing_currency VARCHAR DEFAULT 'USD'")
             if 'shop_name' not in columns:
@@ -82,11 +82,20 @@ class Database:
             if 'accepted_payments' not in columns:
                 migrations.append("ALTER TABLE vendor ADD COLUMN accepted_payments VARCHAR DEFAULT 'XMR'")
 
-            if migrations:
-                with self.engine.connect() as conn:
-                    for sql in migrations:
-                        conn.execute(text(sql))
-                    conn.commit()
+        # Check if product table exists and add missing columns
+        if 'product' in inspector.get_table_names():
+            columns = [col['name'] for col in inspector.get_columns('product')]
+
+            if 'price_fiat' not in columns:
+                migrations.append("ALTER TABLE product ADD COLUMN price_fiat FLOAT")
+            if 'currency' not in columns:
+                migrations.append("ALTER TABLE product ADD COLUMN currency VARCHAR DEFAULT 'XMR'")
+
+        if migrations:
+            with self.engine.connect() as conn:
+                for sql in migrations:
+                    conn.execute(text(sql))
+                conn.commit()
 
     def session(self) -> Session:
         """Create a new session."""
