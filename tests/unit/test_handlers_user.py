@@ -24,7 +24,8 @@ from bot.handlers.user import (
 )
 from bot.services.catalog import CatalogService
 from bot.services.orders import OrderService
-from bot.models import Product
+from bot.services.vendors import VendorService
+from bot.models import Product, Vendor
 from bot.keyboards import main_menu_keyboard
 
 
@@ -311,8 +312,16 @@ class TestCallbackHandlers:
     async def test_setup_callback_payments(self, mock_update, mock_context):
         """Test setup:payments callback."""
         mock_update.callback_query.data = "setup:payments"
+        mock_update.effective_user.id = 123
 
-        await handle_setup_callback(mock_update, mock_context)
+        # Create mock vendors service
+        mock_vendors = MagicMock(spec=VendorService)
+        mock_vendor = MagicMock(spec=Vendor)
+        mock_vendor.accepted_payments = "XMR"
+        mock_vendors.get_by_telegram_id.return_value = mock_vendor
+        mock_vendors.get_accepted_payments_list.return_value = ["XMR"]
+
+        await handle_setup_callback(mock_update, mock_context, mock_vendors)
 
         mock_update.callback_query.answer.assert_called_once()
         call_args = mock_update.callback_query.edit_message_text.call_args[0]
@@ -332,12 +341,22 @@ class TestCallbackHandlers:
     async def test_payment_toggle_callback(self, mock_update, mock_context):
         """Test pay:toggle callback."""
         mock_update.callback_query.data = "pay:toggle:BTC"
-        mock_context.user_data["accepted_payments"] = ["XMR"]
+        mock_update.effective_user.id = 123
 
-        await handle_payment_toggle_callback(mock_update, mock_context)
+        # Create mock vendors service
+        mock_vendors = MagicMock(spec=VendorService)
+        mock_vendor = MagicMock(spec=Vendor)
+        mock_vendor.id = 1
+        mock_vendors.get_by_telegram_id.return_value = mock_vendor
+        mock_vendors.get_accepted_payments_list.return_value = ["XMR"]
+
+        await handle_payment_toggle_callback(mock_update, mock_context, mock_vendors)
 
         mock_update.callback_query.answer.assert_called_once()
-        assert "BTC" in mock_context.user_data["accepted_payments"]
+        # Verify update_settings was called with BTC added
+        mock_vendors.update_settings.assert_called_once()
+        call_args = mock_vendors.update_settings.call_args
+        assert "BTC" in call_args[1]["accepted_payments"]
 
     @pytest.mark.asyncio
     async def test_payment_toggle_xmr_cannot_disable(self, mock_update, mock_context):
@@ -391,10 +410,18 @@ class TestTextInputHandlers:
         """Test text input for shop name."""
         mock_context.user_data["awaiting_input"] = "shopname"
         mock_update.message.text = "My Cool Shop"
+        mock_update.effective_user.id = 123
 
-        await handle_text_input(mock_update, mock_context)
+        # Create mock vendors service
+        mock_vendors = MagicMock(spec=VendorService)
+        mock_vendor = MagicMock(spec=Vendor)
+        mock_vendor.id = 1
+        mock_vendors.get_by_telegram_id.return_value = mock_vendor
 
-        assert mock_context.user_data["shop_name"] == "My Cool Shop"
+        await handle_text_input(mock_update, mock_context, vendors=mock_vendors)
+
+        # Verify shop name saved to database
+        mock_vendors.update_settings.assert_called_once_with(1, shop_name="My Cool Shop")
         assert mock_context.user_data["awaiting_input"] is None
 
     @pytest.mark.asyncio
@@ -402,11 +429,20 @@ class TestTextInputHandlers:
         """Test text input for valid wallet address."""
         mock_context.user_data["awaiting_input"] = "wallet"
         # Valid Monero address (95 chars starting with 4)
-        mock_update.message.text = "4" + "A" * 94
+        wallet_address = "4" + "A" * 94
+        mock_update.message.text = wallet_address
+        mock_update.effective_user.id = 123
 
-        await handle_text_input(mock_update, mock_context)
+        # Create mock vendors service
+        mock_vendors = MagicMock(spec=VendorService)
+        mock_vendor = MagicMock(spec=Vendor)
+        mock_vendor.id = 1
+        mock_vendors.get_by_telegram_id.return_value = mock_vendor
 
-        assert mock_context.user_data["wallet_address"] == mock_update.message.text
+        await handle_text_input(mock_update, mock_context, vendors=mock_vendors)
+
+        # Verify wallet saved to database
+        mock_vendors.update_settings.assert_called_once_with(1, wallet_address=wallet_address)
         assert mock_context.user_data["awaiting_input"] is None
 
     @pytest.mark.asyncio

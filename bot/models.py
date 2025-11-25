@@ -32,6 +32,11 @@ class Vendor(SQLModel, table=True):
     telegram_id: int
     name: str
     commission_rate: float = 0.05
+    # Vendor settings (persisted)
+    pricing_currency: str = "USD"
+    shop_name: Optional[str] = None
+    wallet_address: Optional[str] = None
+    accepted_payments: str = "XMR"  # Comma-separated list of accepted coins
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 

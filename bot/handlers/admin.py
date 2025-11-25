@@ -401,8 +401,9 @@ async def handle_admin_text_input(
     text = update.message.text
 
     # New product creation flow
-    # Get vendor's currency setting
-    vendor_currency = context.user_data.get('pricing_currency', 'USD')
+    # Get vendor's currency setting from database
+    vendor = vendors.get_by_telegram_id(user_id)
+    vendor_currency = vendor.pricing_currency if vendor else 'USD'
     currency_symbol = get_currency_symbol(vendor_currency)
 
     if awaiting == 'product_name':

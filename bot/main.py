@@ -77,11 +77,11 @@ def build_app() -> Application:
         pattern=r"^setup:"
     ))
     application.add_handler(CallbackQueryHandler(
-        user.handle_payment_toggle_callback,
+        lambda u, c: user.handle_payment_toggle_callback(u, c, vendors),
         pattern=r"^pay:"
     ))
     application.add_handler(CallbackQueryHandler(
-        user.handle_currency_callback,
+        lambda u, c: user.handle_currency_callback(u, c, vendors),
         pattern=r"^currency:"
     ))
     application.add_handler(CallbackQueryHandler(
@@ -112,7 +112,7 @@ def build_app() -> Application:
         # Try admin text input first (for product creation/editing)
         await admin.handle_admin_text_input(update, context, catalog, vendors)
         # Then user text input (for setup flows, delivery address)
-        await user.handle_text_input(update, context, orders, catalog)
+        await user.handle_text_input(update, context, orders, catalog, vendors)
 
     application.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND,

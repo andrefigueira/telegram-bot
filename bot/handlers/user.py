@@ -327,9 +327,11 @@ async def handle_setup_callback(update: Update, context: ContextTypes.DEFAULT_TY
                 parse_mode='Markdown',
                 reply_markup=setup_keyboard(True)
             )
-    elif action == "payments":
-        # Get current payment methods from user data or defaults
-        selected = context.user_data.get('accepted_payments', ['XMR'])
+    elif action == "payments" and vendors:
+        # Get current payment methods from database
+        selected = ["XMR"]
+        if vendor:
+            selected = vendors.get_accepted_payments_list(vendor)
         await query.edit_message_text(
             "*Payment Methods*\n\n"
             "Select which cryptocurrencies you want to accept.\n"
@@ -354,7 +356,10 @@ async def handle_setup_callback(update: Update, context: ContextTypes.DEFAULT_TY
             parse_mode='Markdown'
         )
     elif action == "currency":
-        current_currency = context.user_data.get('pricing_currency', 'USD')
+        # Get current currency from database
+        current_currency = "USD"
+        if vendor:
+            current_currency = vendor.pricing_currency or "USD"
         await query.edit_message_text(
             "*Pricing Currency*\n\n"
             "Select the currency you want to use for product prices.\n\n"
@@ -364,14 +369,21 @@ async def handle_setup_callback(update: Update, context: ContextTypes.DEFAULT_TY
             reply_markup=currency_keyboard(current_currency)
         )
     elif action == "view":
-        shop_name = context.user_data.get('shop_name', 'Not set')
-        wallet = context.user_data.get('wallet_address', 'Not set')
-        payments = context.user_data.get('accepted_payments', ['XMR'])
-        payments_str = ', '.join(payments)
+        # Get settings from database
         vendor_status = "Yes" if is_vendor else "No"
-        pricing_currency = context.user_data.get('pricing_currency', 'USD')
+        if vendor:
+            shop_name = vendor.shop_name or "Not set"
+            wallet = vendor.wallet_address or "Not set"
+            payments = vendors.get_accepted_payments_list(vendor)
+            pricing_currency = vendor.pricing_currency or "USD"
+        else:
+            shop_name = "Not set"
+            wallet = "Not set"
+            payments = ["XMR"]
+            pricing_currency = "USD"
 
-        wallet_display = f"`{wallet[:20]}...`" if wallet != 'Not set' else wallet
+        payments_str = ", ".join(payments)
+        wallet_display = f"`{wallet[:20]}...`" if wallet != "Not set" and len(wallet) > 20 else wallet
         await query.edit_message_text(
             f"*Your Settings*\n\n"
             f"*Vendor:* {vendor_status}\n"
@@ -384,7 +396,7 @@ async def handle_setup_callback(update: Update, context: ContextTypes.DEFAULT_TY
         )
 
 
-async def handle_payment_toggle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def handle_payment_toggle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, vendors: VendorService = None) -> None:
     """Handle payment method toggle callbacks."""
     query = update.callback_query
     await query.answer()
@@ -398,8 +410,15 @@ async def handle_payment_toggle_callback(update: Update, context: ContextTypes.D
     action = parts[1]
     coin = parts[2] if len(parts) > 2 else None
 
+    user_id = update.effective_user.id
+    vendor = vendors.get_by_telegram_id(user_id) if vendors else None
+
     if action == "toggle" and coin and len(parts) >= 3:
-        selected = context.user_data.get('accepted_payments', ['XMR'])
+        # Get current payments from database
+        if vendor and vendors:
+            selected = vendors.get_accepted_payments_list(vendor)
+        else:
+            selected = ["XMR"]
 
         # XMR cannot be disabled
         if coin == "XMR":
@@ -411,7 +430,9 @@ async def handle_payment_toggle_callback(update: Update, context: ContextTypes.D
         else:
             selected.append(coin)
 
-        context.user_data['accepted_payments'] = selected
+        # Save to database immediately
+        if vendor and vendors:
+            vendors.update_settings(vendor.id, accepted_payments=selected)
 
         await query.edit_message_text(
             "*Payment Methods*\n\n"
@@ -422,16 +443,21 @@ async def handle_payment_toggle_callback(update: Update, context: ContextTypes.D
             reply_markup=payment_methods_keyboard(selected)
         )
     elif action == "save":
-        selected = context.user_data.get('accepted_payments', ['XMR'])
+        # Get current payments from database
+        if vendor and vendors:
+            selected = vendors.get_accepted_payments_list(vendor)
+        else:
+            selected = ["XMR"]
+        is_vendor = vendor is not None
         await query.edit_message_text(
             f"*Payment Methods Saved!*\n\n"
             f"You now accept: {', '.join(selected)}",
             parse_mode='Markdown',
-            reply_markup=setup_keyboard()
+            reply_markup=setup_keyboard(is_vendor)
         )
 
 
-async def handle_currency_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def handle_currency_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, vendors: VendorService = None) -> None:
     """Handle currency selection callbacks."""
     query = update.callback_query
     await query.answer()
@@ -445,8 +471,14 @@ async def handle_currency_callback(update: Update, context: ContextTypes.DEFAULT
     action = parts[1]
     currency = parts[2]
 
+    user_id = update.effective_user.id
+    vendor = vendors.get_by_telegram_id(user_id) if vendors else None
+    is_vendor = vendor is not None
+
     if action == "select":
-        context.user_data['pricing_currency'] = currency
+        # Save to database
+        if vendor and vendors:
+            vendors.update_settings(vendor.id, pricing_currency=currency)
 
         # Get currency symbol
         symbol = "$"
@@ -460,7 +492,7 @@ async def handle_currency_callback(update: Update, context: ContextTypes.DEFAULT
             f"Your products will be priced in {symbol} ({currency}).\n\n"
             f"When customers pay, we'll convert to their chosen crypto automatically.",
             parse_mode='Markdown',
-            reply_markup=setup_keyboard()
+            reply_markup=setup_keyboard(is_vendor)
         )
 
 
@@ -663,7 +695,7 @@ async def handle_order_callback(update: Update, context: ContextTypes.DEFAULT_TY
             )
 
 
-async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE, orders: OrderService = None, catalog: CatalogService = None) -> None:
+async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE, orders: OrderService = None, catalog: CatalogService = None, vendors: VendorService = None) -> None:
     """Handle text input for setup flows."""
     awaiting = context.user_data.get('awaiting_input')
 
@@ -671,30 +703,37 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         return
 
     text = update.message.text
+    user_id = update.effective_user.id
+    vendor = vendors.get_by_telegram_id(user_id) if vendors else None
+    is_vendor = vendor is not None
 
     if awaiting == 'shopname':
-        context.user_data['shop_name'] = text
+        # Save to database
+        if vendor and vendors:
+            vendors.update_settings(vendor.id, shop_name=text)
         context.user_data['awaiting_input'] = None
         await update.message.reply_text(
             f"*Shop name set to:* {text}",
             parse_mode='Markdown',
-            reply_markup=setup_keyboard()
+            reply_markup=setup_keyboard(is_vendor)
         )
 
     elif awaiting == 'wallet':
         # Basic validation - Monero addresses start with 4 or 8 and are 95 chars
         if len(text) >= 95 and (text.startswith('4') or text.startswith('8')):
-            context.user_data['wallet_address'] = text
+            # Save to database
+            if vendor and vendors:
+                vendors.update_settings(vendor.id, wallet_address=text)
             context.user_data['awaiting_input'] = None
             await update.message.reply_text(
                 f"*Wallet address saved!*\n\n`{text[:30]}...`",
                 parse_mode='Markdown',
-                reply_markup=setup_keyboard()
+                reply_markup=setup_keyboard(is_vendor)
             )
         else:
             await update.message.reply_text(
                 "Invalid Monero address. Please send a valid XMR address.",
-                reply_markup=setup_keyboard()
+                reply_markup=setup_keyboard(is_vendor)
             )
 
     elif awaiting == 'delivery_address':
@@ -708,8 +747,9 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE, 
                 context.user_data['ordering_product'] = None
                 context.user_data['order_quantity'] = None
 
-                # Get accepted payment methods
-                accepted = context.user_data.get('accepted_payments', ['XMR'])
+                # Get accepted payment methods from vendor (product owner)
+                # For now, default to XMR - in future could look up product's vendor
+                accepted = ["XMR"]
 
                 await update.message.reply_text(
                     f"*Order #{order_data['order_id']} Created!*\n\n"
