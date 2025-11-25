@@ -23,10 +23,17 @@ jobs:
             # Login to Docker Hub
             echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
 
+            # Install docker compose v2 if needed
+            if ! docker compose version &>/dev/null; then
+              mkdir -p /root/.docker/cli-plugins
+              curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 -o /root/.docker/cli-plugins/docker-compose
+              chmod +x /root/.docker/cli-plugins/docker-compose
+            fi
+
             # Pull and restart
             cd /opt/telegram-bot
-            docker-compose pull
-            docker-compose up -d
+            docker compose pull
+            docker compose up -d
 
             # Cleanup
             docker image prune -f

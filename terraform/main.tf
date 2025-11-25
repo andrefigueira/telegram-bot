@@ -26,13 +26,15 @@ resource "digitalocean_droplet" "bot" {
   ssh_keys = [digitalocean_ssh_key.default.fingerprint]
 
   user_data = templatefile("${path.module}/cloud-init.yaml", {
-    telegram_token     = var.telegram_token
-    encryption_key     = var.encryption_key
-    monero_rpc_url     = var.monero_rpc_url
-    admin_ids          = var.admin_ids
-    environment        = var.environment
-    domain             = var.domain
-    docker_compose_url = "https://raw.githubusercontent.com/${var.github_repo}/main/docker-compose.prod.yml"
+    telegram_token      = var.telegram_token
+    encryption_key      = var.encryption_key
+    monero_rpc_url      = var.monero_rpc_url
+    admin_ids           = var.admin_ids
+    environment         = var.environment
+    domain              = var.domain
+    dockerhub_username  = var.dockerhub_username
+    dockerhub_token     = var.dockerhub_token
+    docker_compose_url  = "https://raw.githubusercontent.com/${var.github_repo}/main/docker-compose.prod.yml"
   })
 
   tags = ["telegram-bot", var.environment]
@@ -84,10 +86,19 @@ resource "digitalocean_firewall" "bot" {
   }
 }
 
+resource "digitalocean_reserved_ip" "bot" {
+  region = var.region
+}
+
+resource "digitalocean_reserved_ip_assignment" "bot" {
+  ip_address = digitalocean_reserved_ip.bot.ip_address
+  droplet_id = digitalocean_droplet.bot.id
+}
+
 resource "digitalocean_project" "bot" {
   name        = var.project_name
   description = "Telegram e-commerce bot infrastructure"
   purpose     = "Service or API"
   environment = var.environment == "production" ? "Production" : "Development"
-  resources   = [digitalocean_droplet.bot.urn]
+  resources   = [digitalocean_droplet.bot.urn, digitalocean_reserved_ip.bot.urn]
 }

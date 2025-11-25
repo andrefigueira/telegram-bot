@@ -44,8 +44,8 @@ write_files:
       [Service]
       Type=simple
       WorkingDirectory=/opt/telegram-bot
-      ExecStart=/usr/bin/docker-compose up
-      ExecStop=/usr/bin/docker-compose down
+      ExecStart=/usr/bin/docker compose up
+      ExecStop=/usr/bin/docker compose down
       Restart=always
       RestartSec=10
 
@@ -186,6 +186,11 @@ runcmd:
   - systemctl enable docker
   - systemctl start docker
 
+  # Install docker compose v2
+  - mkdir -p /root/.docker/cli-plugins
+  - curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 -o /root/.docker/cli-plugins/docker-compose
+  - chmod +x /root/.docker/cli-plugins/docker-compose
+
   # Create monero user with no shell
   - useradd -r -m -d /opt/monero -s /usr/sbin/nologin monero
 
@@ -199,6 +204,9 @@ runcmd:
   - mkdir -p /opt/monero/wallets
   - chown monero:monero /opt/monero/wallets
   - chmod 700 /opt/monero/wallets
+
+  # Docker Hub login
+  - echo '${dockerhub_token}' | docker login -u '${dockerhub_username}' --password-stdin
 
   # Bot setup
   - mkdir -p /opt/telegram-bot/data /opt/telegram-bot/logs
