@@ -60,6 +60,33 @@ class Database:
     def __init__(self, url: str = "sqlite:///db.sqlite3") -> None:
         self.engine = create_engine(url, echo=False)
         SQLModel.metadata.create_all(self.engine)
+        self._run_migrations()
+
+    def _run_migrations(self) -> None:
+        """Run database migrations for schema changes."""
+        from sqlalchemy import text, inspect
+
+        inspector = inspect(self.engine)
+
+        # Check if vendor table exists and add missing columns
+        if 'vendor' in inspector.get_table_names():
+            columns = [col['name'] for col in inspector.get_columns('vendor')]
+
+            migrations = []
+            if 'pricing_currency' not in columns:
+                migrations.append("ALTER TABLE vendor ADD COLUMN pricing_currency VARCHAR DEFAULT 'USD'")
+            if 'shop_name' not in columns:
+                migrations.append("ALTER TABLE vendor ADD COLUMN shop_name VARCHAR")
+            if 'wallet_address' not in columns:
+                migrations.append("ALTER TABLE vendor ADD COLUMN wallet_address VARCHAR")
+            if 'accepted_payments' not in columns:
+                migrations.append("ALTER TABLE vendor ADD COLUMN accepted_payments VARCHAR DEFAULT 'XMR'")
+
+            if migrations:
+                with self.engine.connect() as conn:
+                    for sql in migrations:
+                        conn.execute(text(sql))
+                    conn.commit()
 
     def session(self) -> Session:
         """Create a new session."""
