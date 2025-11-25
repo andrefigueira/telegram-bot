@@ -759,16 +759,14 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE, 
                 context.user_data['ordering_product'] = None
                 context.user_data['order_quantity'] = None
 
-                # Get accepted payment methods from vendor (product owner)
-                # For now, default to XMR - in future could look up product's vendor
-                accepted = ["XMR"]
-
                 await update.message.reply_text(
                     f"*Order #{order_data['order_id']} Created!*\n\n"
-                    f"*Total:* `{order_data['total_xmr']}` XMR\n\n"
-                    f"Select payment method:",
+                    f"*Amount:* `{order_data['total_xmr']:.6f}` XMR\n"
+                    f"*Send to:*\n`{order_data['payment_address']}`\n\n"
+                    f"*Payment ID:* `{order_data['payment_id']}`\n\n"
+                    f"Send the exact amount to complete your order.",
                     parse_mode='Markdown',
-                    reply_markup=payment_coin_keyboard(order_data['order_id'], accepted)
+                    reply_markup=order_confirmation_keyboard(order_data['order_id'])
                 )
             except Exception as e:
                 await update.message.reply_text(
