@@ -54,6 +54,8 @@ def setup_keyboard(is_vendor: bool = False) -> InlineKeyboardMarkup:
         keyboard.append([InlineKeyboardButton("Become a Vendor", callback_data="setup:become_vendor")])
     else:
         keyboard.append([InlineKeyboardButton("Manage My Products", callback_data="admin:products")])
+        keyboard.append([InlineKeyboardButton("Manage Postage Options", callback_data="setup:postage")])
+        keyboard.append([InlineKeyboardButton("View My Orders", callback_data="admin:orders")])
 
     keyboard.extend([
         [InlineKeyboardButton("Set Payment Methods", callback_data="setup:payments")],
@@ -312,4 +314,107 @@ def confirm_delete_keyboard(product_id: int) -> InlineKeyboardMarkup:
             InlineKeyboardButton("Cancel", callback_data=f"vendor:edit:{product_id}"),
         ],
     ]
+    return InlineKeyboardMarkup(keyboard)
+
+
+def postage_management_keyboard(postage_types: list) -> InlineKeyboardMarkup:
+    """Vendor's postage type management keyboard."""
+    keyboard = []
+
+    for pt in postage_types[:10]:
+        status = "Active" if pt.is_active else "Inactive"
+        symbol = {"USD": "$", "GBP": "£", "EUR": "€"}.get(pt.currency, "$")
+        keyboard.append([
+            InlineKeyboardButton(
+                f"{pt.name} - {symbol}{pt.price_fiat:.2f} ({status})",
+                callback_data=f"postage:edit:{pt.id}"
+            )
+        ])
+
+    keyboard.append([InlineKeyboardButton("+ Add Postage Option", callback_data="postage:add")])
+    keyboard.append([InlineKeyboardButton("Back to Setup", callback_data="setup:main")])
+    return InlineKeyboardMarkup(keyboard)
+
+
+def postage_edit_keyboard(postage_id: int) -> InlineKeyboardMarkup:
+    """Postage type edit options keyboard."""
+    keyboard = [
+        [
+            InlineKeyboardButton("Edit Name", callback_data=f"postage:edit_name:{postage_id}"),
+            InlineKeyboardButton("Edit Price", callback_data=f"postage:edit_price:{postage_id}"),
+        ],
+        [
+            InlineKeyboardButton("Edit Description", callback_data=f"postage:edit_desc:{postage_id}"),
+            InlineKeyboardButton("Toggle Active", callback_data=f"postage:toggle:{postage_id}"),
+        ],
+        [
+            InlineKeyboardButton("Delete", callback_data=f"postage:delete:{postage_id}"),
+        ],
+        [InlineKeyboardButton("Back to Postage", callback_data="setup:postage")],
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+
+def postage_selection_keyboard(postage_types: list, product_id: int, quantity: int) -> InlineKeyboardMarkup:
+    """Postage selection during order flow."""
+    keyboard = []
+
+    for pt in postage_types:
+        if pt.is_active:
+            symbol = {"USD": "$", "GBP": "£", "EUR": "€"}.get(pt.currency, "$")
+            desc = f" - {pt.description}" if pt.description else ""
+            keyboard.append([
+                InlineKeyboardButton(
+                    f"{pt.name} ({symbol}{pt.price_fiat:.2f}){desc}",
+                    callback_data=f"order:postage:{product_id}:{quantity}:{pt.id}"
+                )
+            ])
+
+    # Option for no postage (pickup/digital)
+    keyboard.append([
+        InlineKeyboardButton("No Postage Required", callback_data=f"order:postage:{product_id}:{quantity}:0")
+    ])
+
+    keyboard.append([InlineKeyboardButton("Cancel", callback_data=f"product:view:{product_id}")])
+    return InlineKeyboardMarkup(keyboard)
+
+
+def vendor_orders_keyboard(orders: list) -> InlineKeyboardMarkup:
+    """Vendor's order management keyboard."""
+    keyboard = []
+
+    for order in orders[:10]:
+        status_emoji = {
+            "NEW": "New",
+            "PAID": "Paid",
+            "SHIPPED": "Shipped",
+            "COMPLETED": "Done",
+            "CANCELLED": "X",
+        }.get(order.state, "?")
+
+        keyboard.append([
+            InlineKeyboardButton(
+                f"#{order.id} - {status_emoji}",
+                callback_data=f"vorder:view:{order.id}"
+            )
+        ])
+
+    keyboard.append([InlineKeyboardButton("Back to Menu", callback_data="menu:admin")])
+    return InlineKeyboardMarkup(keyboard)
+
+
+def vendor_order_detail_keyboard(order_id: int, state: str) -> InlineKeyboardMarkup:
+    """Vendor's order detail keyboard with actions."""
+    keyboard = []
+
+    if state == "PAID":
+        keyboard.append([
+            InlineKeyboardButton("Mark as Shipped", callback_data=f"vorder:ship:{order_id}")
+        ])
+    elif state == "SHIPPED":
+        keyboard.append([
+            InlineKeyboardButton("Mark as Completed", callback_data=f"vorder:complete:{order_id}")
+        ])
+
+    keyboard.append([InlineKeyboardButton("Back to Orders", callback_data="admin:orders")])
     return InlineKeyboardMarkup(keyboard)

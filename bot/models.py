@@ -11,6 +11,41 @@ import base64
 from nacl import secret
 
 
+class PlatformSettings(SQLModel, table=True):
+    """Platform-wide settings (super admin only)."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    key: str = Field(unique=True)  # Setting key
+    value: str  # Setting value (stored as string, parsed as needed)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class Payout(SQLModel, table=True):
+    """Track payouts to vendors."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    order_id: int = Field(foreign_key="order.id")
+    vendor_id: int = Field(foreign_key="vendor.id")
+    amount_xmr: Decimal = Field(default=Decimal("0"), sa_column=Column(Numeric(precision=20, scale=8, asdecimal=True)))
+    tx_hash: Optional[str] = None  # Monero transaction hash
+    status: str = "PENDING"  # PENDING, SENT, CONFIRMED, FAILED
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    sent_at: Optional[datetime] = None
+
+
+class PostageType(SQLModel, table=True):
+    """Postage/shipping option for vendors."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    vendor_id: int = Field(foreign_key="vendor.id")
+    name: str  # e.g., "Standard", "Express", "Next Day"
+    description: Optional[str] = None  # e.g., "3-5 business days"
+    price_fiat: Decimal = Field(default=Decimal("0"), sa_column=Column(Numeric(precision=20, scale=2, asdecimal=True)))
+    currency: str = "USD"  # Currency for the price
+    is_active: bool = True
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class Product(SQLModel, table=True):
     """Product item."""
 
@@ -53,7 +88,13 @@ class Order(SQLModel, table=True):
     payment_id: str
     address_encrypted: str
     commission_xmr: Decimal = Field(default=Decimal("0"), sa_column=Column(Numeric(precision=20, scale=8, asdecimal=True)))
-    state: str = "NEW"
+    state: str = "NEW"  # NEW, PAID, SHIPPED, COMPLETED, CANCELLED
+    # Postage/shipping
+    postage_type_id: Optional[int] = Field(default=None, foreign_key="postagetype.id")
+    postage_xmr: Decimal = Field(default=Decimal("0"), sa_column=Column(Numeric(precision=20, scale=8, asdecimal=True)))
+    # Shipping tracking
+    shipped_at: Optional[datetime] = None
+    shipping_note: Optional[str] = None  # Vendor note when marking shipped
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
@@ -77,27 +118,43 @@ class Database:
             columns = [col['name'] for col in inspector.get_columns('vendor')]
 
             if 'pricing_currency' not in columns:
-                migrations.append("ALTER TABLE vendor ADD COLUMN pricing_currency VARCHAR DEFAULT 'USD'")
+                migrations.append("ALTER TABLE vendor ADD COLUMN pricing_currency VARCHAR(10) DEFAULT 'USD'")
             if 'shop_name' not in columns:
-                migrations.append("ALTER TABLE vendor ADD COLUMN shop_name VARCHAR")
+                migrations.append("ALTER TABLE vendor ADD COLUMN shop_name VARCHAR(255)")
             if 'wallet_address' not in columns:
-                migrations.append("ALTER TABLE vendor ADD COLUMN wallet_address VARCHAR")
+                migrations.append("ALTER TABLE vendor ADD COLUMN wallet_address VARCHAR(255)")
             if 'accepted_payments' not in columns:
-                migrations.append("ALTER TABLE vendor ADD COLUMN accepted_payments VARCHAR DEFAULT 'XMR'")
+                migrations.append("ALTER TABLE vendor ADD COLUMN accepted_payments VARCHAR(100) DEFAULT 'XMR'")
 
         # Check if product table exists and add missing columns
         if 'product' in inspector.get_table_names():
             columns = [col['name'] for col in inspector.get_columns('product')]
 
             if 'price_fiat' not in columns:
-                migrations.append("ALTER TABLE product ADD COLUMN price_fiat FLOAT")
+                migrations.append("ALTER TABLE product ADD COLUMN price_fiat DECIMAL(20,2)")
             if 'currency' not in columns:
-                migrations.append("ALTER TABLE product ADD COLUMN currency VARCHAR DEFAULT 'XMR'")
+                migrations.append("ALTER TABLE product ADD COLUMN currency VARCHAR(10) DEFAULT 'XMR'")
+
+        # Check if order table exists and add missing columns
+        if 'order' in inspector.get_table_names():
+            columns = [col['name'] for col in inspector.get_columns('order')]
+
+            if 'postage_type_id' not in columns:
+                migrations.append("ALTER TABLE `order` ADD COLUMN postage_type_id INT")
+            if 'postage_xmr' not in columns:
+                migrations.append("ALTER TABLE `order` ADD COLUMN postage_xmr DECIMAL(20,8) DEFAULT 0")
+            if 'shipped_at' not in columns:
+                migrations.append("ALTER TABLE `order` ADD COLUMN shipped_at DATETIME")
+            if 'shipping_note' not in columns:
+                migrations.append("ALTER TABLE `order` ADD COLUMN shipping_note TEXT")
 
         if migrations:
             with self.engine.connect() as conn:
                 for sql in migrations:
-                    conn.execute(text(sql))
+                    try:
+                        conn.execute(text(sql))
+                    except Exception:
+                        pass  # Column may already exist
                 conn.commit()
 
     def session(self) -> Session:
