@@ -18,6 +18,7 @@ bcrypt = "^4.0"
 fastapi = "^0.109.0"
 uvicorn = "^0.27.0"
 PyJWT = "^2.8.0"
+httpx = "^0.26.0"
 
 [tool.poetry.dev-dependencies]
 pytest = "^7.4"
@@ -25,7 +26,6 @@ pytest-cov = "^4.1"
 pytest-asyncio = "^0.21"
 ruff = "^0.0.282"
 mypy = "^1.4"
-httpx = "^0.26.0"
 
 [tool.ruff]
 line-length = 88

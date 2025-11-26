@@ -97,44 +97,50 @@ class HealthCheckServer:
         # 2. Monero RPC check
         if settings.monero_rpc_url:
             try:
-                import aiohttp
-                from aiohttp import BasicAuth
+                import httpx
 
-                # Set up auth if credentials provided
+                # Use digest auth (Monero RPC requires digest, not basic)
                 auth = None
                 if settings.monero_rpc_user and settings.monero_rpc_password:
-                    auth = BasicAuth(settings.monero_rpc_user, settings.monero_rpc_password)
+                    auth = httpx.DigestAuth(settings.monero_rpc_user, settings.monero_rpc_password)
 
-                async with aiohttp.ClientSession() as client:
-                    # Try to get wallet height (simple RPC call)
-                    async with client.post(
+                async with httpx.AsyncClient(timeout=5.0) as client:
+                    resp = await client.post(
                         settings.monero_rpc_url + "/json_rpc",
                         json={"jsonrpc": "2.0", "id": "0", "method": "get_height"},
-                        auth=auth,
-                        timeout=aiohttp.ClientTimeout(total=5)
-                    ) as resp:
-                        if resp.status == 200:
-                            data = await resp.json()
-                            height = data.get("result", {}).get("height", "unknown")
-                            status["services"]["monero_rpc"] = {
-                                "status": "ok",
-                                "url": settings.monero_rpc_url,
-                                "wallet_height": height
-                            }
-                        elif resp.status == 401:
-                            status["services"]["monero_rpc"] = {
-                                "status": "auth_error",
-                                "url": settings.monero_rpc_url,
-                                "error": "Authentication failed"
-                            }
-                            all_ok = False
-                        else:
-                            status["services"]["monero_rpc"] = {
-                                "status": "error",
-                                "url": settings.monero_rpc_url,
-                                "http_status": resp.status
-                            }
-                            all_ok = False
+                        auth=auth
+                    )
+
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if "error" in data:
+                        # RPC responded but with error (e.g., no wallet)
+                        status["services"]["monero_rpc"] = {
+                            "status": "connected",
+                            "url": settings.monero_rpc_url,
+                            "note": data["error"].get("message", "RPC error")
+                        }
+                    else:
+                        height = data.get("result", {}).get("height", "unknown")
+                        status["services"]["monero_rpc"] = {
+                            "status": "ok",
+                            "url": settings.monero_rpc_url,
+                            "wallet_height": height
+                        }
+                elif resp.status_code == 401:
+                    status["services"]["monero_rpc"] = {
+                        "status": "auth_error",
+                        "url": settings.monero_rpc_url,
+                        "error": "Authentication failed"
+                    }
+                    all_ok = False
+                else:
+                    status["services"]["monero_rpc"] = {
+                        "status": "error",
+                        "url": settings.monero_rpc_url,
+                        "http_status": resp.status_code
+                    }
+                    all_ok = False
             except asyncio.TimeoutError:
                 status["services"]["monero_rpc"] = {
                     "status": "timeout",

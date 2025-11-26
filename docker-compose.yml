@@ -11,7 +11,7 @@ services:
       - ENVIRONMENT=production
       - DATABASE_URL=sqlite:////app/data/db.sqlite3
       - LOG_FILE=/app/logs/bot.log
-      - MONERO_RPC_URL=http://monero-wallet:18082
+      - MONERO_RPC_URL=http://monero-wallet:18083
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
