@@ -20,11 +20,16 @@ from ..keyboards import (
     payment_methods_keyboard,
     vendor_products_keyboard,
     currency_keyboard,
+    postage_management_keyboard,
+    postage_edit_keyboard,
+    postage_selection_keyboard,
     SUPPORTED_COINS,
     SUPPORTED_CURRENCIES,
 )
 from ..services.vendors import VendorService
-from ..models import Vendor
+from ..services.postage import PostageService
+from ..models import Vendor, Database
+from decimal import Decimal
 
 
 HELP_TEXT = """
@@ -282,7 +287,7 @@ async def handle_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         )
 
 
-async def handle_setup_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, vendors: VendorService = None) -> None:
+async def handle_setup_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, vendors: VendorService = None, postage: PostageService = None) -> None:
     """Handle setup menu button callbacks."""
     query = update.callback_query
     await query.answer()
@@ -369,6 +374,16 @@ async def handle_setup_callback(update: Update, context: ContextTypes.DEFAULT_TY
             "convert to crypto when they pay.",
             parse_mode='Markdown',
             reply_markup=currency_keyboard(current_currency)
+        )
+    elif action == "postage" and postage and vendor:
+        # Show vendor's postage options
+        postage_types = postage.list_by_vendor(vendor.id)
+        await query.edit_message_text(
+            "*Postage Options*\n\n"
+            "Manage your shipping/delivery options.\n"
+            "Customers will choose from these when ordering.",
+            parse_mode='Markdown',
+            reply_markup=postage_management_keyboard(postage_types)
         )
     elif action == "view":
         # Get settings from database
@@ -498,6 +513,115 @@ async def handle_currency_callback(update: Update, context: ContextTypes.DEFAULT
         )
 
 
+async def handle_postage_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, vendors: VendorService = None, postage: PostageService = None) -> None:
+    """Handle postage management callbacks."""
+    query = update.callback_query
+    await query.answer()
+
+    data = query.data
+    parts = data.split(":")
+
+    if len(parts) < 2:
+        return
+
+    action = parts[1]
+
+    user_id = update.effective_user.id
+    vendor = vendors.get_by_telegram_id(user_id) if vendors else None
+
+    if not vendor or not postage:
+        await query.edit_message_text(
+            "You need to be a vendor to manage postage options.",
+            reply_markup=main_menu_keyboard()
+        )
+        return
+
+    if action == "add":
+        context.user_data['awaiting_input'] = 'postage_name'
+        context.user_data['new_postage'] = {'vendor_id': vendor.id}
+        await query.edit_message_text(
+            "*Add Postage Option*\n\n"
+            "Step 1/3: Enter the postage name\n"
+            "(e.g., Standard, Express, Next Day):",
+            parse_mode='Markdown'
+        )
+
+    elif action == "edit" and len(parts) >= 3:
+        postage_id = int(parts[2])
+        pt = postage.get_postage_type(postage_id)
+        if pt:
+            symbol = {"USD": "$", "GBP": "£", "EUR": "€"}.get(pt.currency, "$")
+            status = "Active" if pt.is_active else "Inactive"
+            desc = pt.description or "No description"
+            await query.edit_message_text(
+                f"*{pt.name}*\n\n"
+                f"Price: {symbol}{pt.price_fiat:.2f}\n"
+                f"Description: {desc}\n"
+                f"Status: {status}",
+                parse_mode='Markdown',
+                reply_markup=postage_edit_keyboard(postage_id)
+            )
+
+    elif action == "edit_name" and len(parts) >= 3:
+        postage_id = int(parts[2])
+        context.user_data['awaiting_input'] = 'edit_postage_name'
+        context.user_data['editing_postage'] = postage_id
+        await query.edit_message_text(
+            "*Edit Postage Name*\n\n"
+            "Enter the new name:",
+            parse_mode='Markdown'
+        )
+
+    elif action == "edit_price" and len(parts) >= 3:
+        postage_id = int(parts[2])
+        context.user_data['awaiting_input'] = 'edit_postage_price'
+        context.user_data['editing_postage'] = postage_id
+        await query.edit_message_text(
+            "*Edit Postage Price*\n\n"
+            "Enter the new price (e.g., 5.99):",
+            parse_mode='Markdown'
+        )
+
+    elif action == "edit_desc" and len(parts) >= 3:
+        postage_id = int(parts[2])
+        context.user_data['awaiting_input'] = 'edit_postage_desc'
+        context.user_data['editing_postage'] = postage_id
+        await query.edit_message_text(
+            "*Edit Postage Description*\n\n"
+            "Enter the new description\n"
+            "(e.g., '3-5 business days'):",
+            parse_mode='Markdown'
+        )
+
+    elif action == "toggle" and len(parts) >= 3:
+        postage_id = int(parts[2])
+        pt = postage.toggle_active(postage_id)
+        if pt:
+            status = "Active" if pt.is_active else "Inactive"
+            await query.answer(f"Postage is now {status}", show_alert=True)
+            symbol = {"USD": "$", "GBP": "£", "EUR": "€"}.get(pt.currency, "$")
+            desc = pt.description or "No description"
+            await query.edit_message_text(
+                f"*{pt.name}*\n\n"
+                f"Price: {symbol}{pt.price_fiat:.2f}\n"
+                f"Description: {desc}\n"
+                f"Status: {status}",
+                parse_mode='Markdown',
+                reply_markup=postage_edit_keyboard(postage_id)
+            )
+
+    elif action == "delete" and len(parts) >= 3:
+        postage_id = int(parts[2])
+        postage.delete_postage_type(postage_id)
+        postage_types = postage.list_by_vendor(vendor.id)
+        await query.edit_message_text(
+            "*Postage Deleted*\n\n"
+            "The postage option has been removed.",
+            parse_mode='Markdown',
+            reply_markup=postage_management_keyboard(postage_types)
+        )
+
+
 async def handle_products_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, catalog: CatalogService = None) -> None:
     """Handle product browsing callbacks."""
     query = update.callback_query
@@ -560,7 +684,7 @@ async def handle_product_callback(update: Update, context: ContextTypes.DEFAULT_
             )
 
 
-async def handle_order_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, orders: OrderService = None, catalog: CatalogService = None) -> None:
+async def handle_order_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, orders: OrderService = None, catalog: CatalogService = None, postage: PostageService = None, vendors: VendorService = None) -> None:
     """Handle order-related callbacks."""
     query = update.callback_query
     await query.answer()
@@ -595,15 +719,56 @@ async def handle_order_callback(update: Update, context: ContextTypes.DEFAULT_TY
             reply_markup=quantity_keyboard(product_id, max_qty)
         )
 
-    elif action == "qty":
+    elif action == "qty" and postage and catalog:
         product_id = int(parts[2])
         quantity = int(parts[3])
 
         context.user_data['order_quantity'] = quantity
+        context.user_data['ordering_product'] = product_id
+
+        # Get the vendor's postage options
+        product = catalog.get_product(product_id)
+        if product:
+            postage_types = postage.list_by_vendor(product.vendor_id, active_only=True)
+            if postage_types:
+                await query.edit_message_text(
+                    f"*Quantity: {quantity}*\n\n"
+                    f"Select a delivery option:",
+                    parse_mode='Markdown',
+                    reply_markup=postage_selection_keyboard(postage_types, product_id, quantity)
+                )
+                return
+
+        # No postage options available, go straight to address
+        context.user_data['order_postage_id'] = None
         context.user_data['awaiting_input'] = 'delivery_address'
 
         await query.edit_message_text(
             f"*Quantity: {quantity}*\n\n"
+            f"Please send your delivery address as a message.",
+            parse_mode='Markdown'
+        )
+
+    elif action == "postage" and len(parts) >= 5:
+        # order:postage:product_id:quantity:postage_id
+        product_id = int(parts[2])
+        quantity = int(parts[3])
+        postage_id = int(parts[4])
+
+        context.user_data['ordering_product'] = product_id
+        context.user_data['order_quantity'] = quantity
+        context.user_data['order_postage_id'] = postage_id if postage_id > 0 else None
+        context.user_data['awaiting_input'] = 'delivery_address'
+
+        postage_note = ""
+        if postage_id > 0 and postage:
+            pt = postage.get_postage_type(postage_id)
+            if pt:
+                symbol = {"USD": "$", "GBP": "£", "EUR": "€"}.get(pt.currency, "$")
+                postage_note = f"\n*Postage:* {pt.name} ({symbol}{pt.price_fiat:.2f})"
+
+        await query.edit_message_text(
+            f"*Quantity: {quantity}*{postage_note}\n\n"
             f"Please send your delivery address as a message.",
             parse_mode='Markdown'
         )
@@ -707,7 +872,7 @@ async def handle_order_callback(update: Update, context: ContextTypes.DEFAULT_TY
             )
 
 
-async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE, orders: OrderService = None, catalog: CatalogService = None, vendors: VendorService = None) -> None:
+async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE, orders: OrderService = None, catalog: CatalogService = None, vendors: VendorService = None, postage: PostageService = None) -> None:
     """Handle text input for setup flows."""
     awaiting = context.user_data.get('awaiting_input')
 
@@ -751,17 +916,26 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     elif awaiting == 'delivery_address':
         product_id = context.user_data.get('ordering_product')
         quantity = context.user_data.get('order_quantity', 1)
+        postage_id = context.user_data.get('order_postage_id')
 
         if orders and product_id:
             try:
-                order_data = orders.create_order(product_id, quantity, text)
+                order_data = orders.create_order(product_id, quantity, text, postage_type_id=postage_id)
                 context.user_data['awaiting_input'] = None
                 context.user_data['ordering_product'] = None
                 context.user_data['order_quantity'] = None
+                context.user_data['order_postage_id'] = None
+
+                # Build order summary
+                postage_info = ""
+                if postage_id and postage:
+                    pt = postage.get_postage_type(postage_id)
+                    if pt:
+                        postage_info = f"\n*Postage:* {pt.name}"
 
                 await update.message.reply_text(
                     f"*Order #{order_data['order_id']} Created!*\n\n"
-                    f"*Amount:* `{order_data['total_xmr']:.6f}` XMR\n"
+                    f"*Amount:* `{order_data['total_xmr']:.6f}` XMR{postage_info}\n"
                     f"*Send to:*\n`{order_data['payment_address']}`\n\n"
                     f"*Payment ID:* `{order_data['payment_id']}`\n\n"
                     f"Send the exact amount to complete your order.",
@@ -777,4 +951,104 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE, 
             await update.message.reply_text(
                 "Order session expired. Please try again.",
                 reply_markup=main_menu_keyboard()
+            )
+
+    # Postage creation/editing inputs
+    elif awaiting == 'postage_name' and postage and vendor:
+        new_postage = context.user_data.get('new_postage', {})
+        new_postage['name'] = text
+        context.user_data['new_postage'] = new_postage
+        context.user_data['awaiting_input'] = 'postage_price'
+        await update.message.reply_text(
+            "*Add Postage Option*\n\n"
+            f"Name: {text}\n\n"
+            "Step 2/3: Enter the price (e.g., 5.99):",
+            parse_mode='Markdown'
+        )
+
+    elif awaiting == 'postage_price' and postage and vendor:
+        try:
+            price = float(text)
+            new_postage = context.user_data.get('new_postage', {})
+            new_postage['price'] = price
+            context.user_data['new_postage'] = new_postage
+            context.user_data['awaiting_input'] = 'postage_desc'
+            await update.message.reply_text(
+                "*Add Postage Option*\n\n"
+                f"Name: {new_postage.get('name')}\n"
+                f"Price: ${price:.2f}\n\n"
+                "Step 3/3: Enter a description\n"
+                "(e.g., '3-5 business days', or 'skip' for none):",
+                parse_mode='Markdown'
+            )
+        except ValueError:
+            await update.message.reply_text(
+                "Invalid price. Please enter a number (e.g., 5.99):"
+            )
+
+    elif awaiting == 'postage_desc' and postage and vendor:
+        new_postage = context.user_data.get('new_postage', {})
+        desc = None if text.lower() == 'skip' else text
+
+        pt = postage.add_postage_type(
+            vendor_id=vendor.id,
+            name=new_postage.get('name', 'Unnamed'),
+            price_fiat=Decimal(str(new_postage.get('price', 0))),
+            currency=vendor.pricing_currency or 'USD',
+            description=desc
+        )
+
+        context.user_data['awaiting_input'] = None
+        context.user_data['new_postage'] = None
+
+        postage_types = postage.list_by_vendor(vendor.id)
+        symbol = {"USD": "$", "GBP": "£", "EUR": "€"}.get(pt.currency, "$")
+        await update.message.reply_text(
+            f"*Postage Option Added!*\n\n"
+            f"*{pt.name}*\n"
+            f"Price: {symbol}{pt.price_fiat:.2f}",
+            parse_mode='Markdown',
+            reply_markup=postage_management_keyboard(postage_types)
+        )
+
+    elif awaiting == 'edit_postage_name' and postage:
+        postage_id = context.user_data.get('editing_postage')
+        if postage_id:
+            postage.update_postage_type(postage_id, name=text)
+            context.user_data['awaiting_input'] = None
+            context.user_data['editing_postage'] = None
+            await update.message.reply_text(
+                f"*Name Updated!*\n\nNew name: {text}",
+                parse_mode='Markdown',
+                reply_markup=postage_edit_keyboard(postage_id)
+            )
+
+    elif awaiting == 'edit_postage_price' and postage:
+        postage_id = context.user_data.get('editing_postage')
+        if postage_id:
+            try:
+                price = float(text)
+                postage.update_postage_type(postage_id, price_fiat=Decimal(str(price)))
+                context.user_data['awaiting_input'] = None
+                context.user_data['editing_postage'] = None
+                await update.message.reply_text(
+                    f"*Price Updated!*\n\nNew price: ${price:.2f}",
+                    parse_mode='Markdown',
+                    reply_markup=postage_edit_keyboard(postage_id)
+                )
+            except ValueError:
+                await update.message.reply_text(
+                    "Invalid price. Please enter a number:"
+                )
+
+    elif awaiting == 'edit_postage_desc' and postage:
+        postage_id = context.user_data.get('editing_postage')
+        if postage_id:
+            postage.update_postage_type(postage_id, description=text)
+            context.user_data['awaiting_input'] = None
+            context.user_data['editing_postage'] = None
+            await update.message.reply_text(
+                f"*Description Updated!*",
+                parse_mode='Markdown',
+                reply_markup=postage_edit_keyboard(postage_id)
             )

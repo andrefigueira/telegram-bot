@@ -418,3 +418,47 @@ def vendor_order_detail_keyboard(order_id: int, state: str) -> InlineKeyboardMar
 
     keyboard.append([InlineKeyboardButton("Back to Orders", callback_data="admin:orders")])
     return InlineKeyboardMarkup(keyboard)
+
+
+def super_admin_keyboard() -> InlineKeyboardMarkup:
+    """Super admin control panel keyboard."""
+    keyboard = [
+        [InlineKeyboardButton("Platform Stats", callback_data="sadmin:stats")],
+        [InlineKeyboardButton("Set Commission Rate", callback_data="sadmin:commission")],
+        [InlineKeyboardButton("Set Platform Wallet", callback_data="sadmin:wallet")],
+        [InlineKeyboardButton("Process Payouts", callback_data="sadmin:payouts")],
+        [InlineKeyboardButton("View Pending Payouts", callback_data="sadmin:pending")],
+        [InlineKeyboardButton("Manage Vendors", callback_data="sadmin:vendors")],
+        [InlineKeyboardButton("Back to Menu", callback_data="menu:main")],
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+
+def commission_rate_keyboard(current_rate: str) -> InlineKeyboardMarkup:
+    """Commission rate selection keyboard."""
+    rates = [
+        ("3%", "0.03"),
+        ("5%", "0.05"),
+        ("7%", "0.07"),
+        ("10%", "0.10"),
+        ("15%", "0.15"),
+    ]
+
+    keyboard = []
+    row = []
+    for label, value in rates:
+        marker = ">" if value == current_rate else " "
+        row.append(InlineKeyboardButton(
+            f"{marker}{label}",
+            callback_data=f"sadmin:set_commission:{value}"
+        ))
+        if len(row) == 3:
+            keyboard.append(row)
+            row = []
+
+    if row:
+        keyboard.append(row)
+
+    keyboard.append([InlineKeyboardButton("Custom Rate", callback_data="sadmin:custom_commission")])
+    keyboard.append([InlineKeyboardButton("Back", callback_data="sadmin:main")])
+    return InlineKeyboardMarkup(keyboard)

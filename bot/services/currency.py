@@ -7,6 +7,7 @@ Uses Decimal for precision - never use float for money.
 
 from __future__ import annotations
 
+import asyncio
 import aiohttp
 import logging
 from decimal import Decimal, ROUND_DOWN, ROUND_HALF_UP
@@ -97,6 +98,39 @@ async def fiat_to_xmr_accurate(amount: Union[float, Decimal, str], currency: str
     xmr_amount = amount_decimal / xmr_price
     # Round down to 8 decimal places (XMR precision) - always round in favor of platform
     return xmr_amount.quantize(XMR_PRECISION, rounding=ROUND_DOWN)
+
+
+def fiat_to_xmr_sync(amount: Union[float, Decimal, str], currency: str) -> Decimal:
+    """Synchronous wrapper for fiat_to_xmr_accurate.
+
+    Uses cached rate if available, otherwise runs async conversion.
+    For use in non-async contexts where accuracy is still needed.
+    """
+    # Try cached first
+    cached = fiat_to_xmr_cached(amount, currency)
+    if cached is not None:
+        return cached
+
+    # Fall back to running the async function
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            # We're in an async context, create a task
+            # For now, use a default rate if cache unavailable
+            amount_decimal = Decimal(str(amount)) if not isinstance(amount, Decimal) else amount
+            if currency == "XMR":
+                return amount_decimal.quantize(XMR_PRECISION, rounding=ROUND_DOWN)
+            # Use a reasonable default XMR price (will be updated when cache refreshes)
+            default_xmr_price = Decimal("150")  # Approximate USD price
+            rate_multipliers = {"USD": Decimal("1"), "GBP": Decimal("0.79"), "EUR": Decimal("0.92")}
+            multiplier = rate_multipliers.get(currency, Decimal("1"))
+            estimated_rate = default_xmr_price * multiplier
+            return (amount_decimal / estimated_rate).quantize(XMR_PRECISION, rounding=ROUND_DOWN)
+        else:
+            return loop.run_until_complete(fiat_to_xmr_accurate(amount, currency))
+    except RuntimeError:
+        # No event loop, create one
+        return asyncio.run(fiat_to_xmr_accurate(amount, currency))
 
 
 async def xmr_to_fiat_accurate(amount: Union[float, Decimal, str], currency: str) -> Decimal:

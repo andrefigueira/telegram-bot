@@ -17,6 +17,11 @@ from ..keyboards import (
     product_edit_keyboard,
     confirm_delete_keyboard,
     main_menu_keyboard,
+    vendor_orders_keyboard,
+    vendor_order_detail_keyboard,
+    super_admin_keyboard,
+    commission_rate_keyboard,
+    setup_keyboard,
     SUPPORTED_CURRENCIES,
 )
 from ..services.currency import (
@@ -24,6 +29,8 @@ from ..services.currency import (
     format_price_simple,
     get_currency_symbol,
 )
+from ..services.orders import OrderService
+from ..services.payout import PayoutService
 import pyotp
 
 logger = logging.getLogger(__name__)
@@ -244,14 +251,39 @@ async def handle_admin_callback(
             parse_mode='Markdown'
         )
 
-    elif action == "orders":
-        await query.edit_message_text(
-            "*Orders*\n\n"
-            "Order management coming soon!\n\n"
-            "Use `/status <order_id>` to check orders for now.",
-            parse_mode='Markdown',
-            reply_markup=admin_menu_keyboard()
-        )
+    elif action == "orders" and vendors:
+        vendor = vendors.get_by_telegram_id(user_id)
+        if vendor:
+            # Get vendor's orders from context
+            orders = context.bot_data.get('orders')
+            if orders:
+                vendor_orders = orders.list_orders_by_vendor(vendor.id)
+                if vendor_orders:
+                    await query.edit_message_text(
+                        "*My Orders*\n\n"
+                        "Tap an order to view details and manage:",
+                        parse_mode='Markdown',
+                        reply_markup=vendor_orders_keyboard(vendor_orders)
+                    )
+                else:
+                    await query.edit_message_text(
+                        "*My Orders*\n\n"
+                        "No orders yet.",
+                        parse_mode='Markdown',
+                        reply_markup=admin_menu_keyboard()
+                    )
+            else:
+                await query.edit_message_text(
+                    "*Orders*\n\n"
+                    "Order service unavailable.",
+                    parse_mode='Markdown',
+                    reply_markup=admin_menu_keyboard()
+                )
+        else:
+            await query.edit_message_text(
+                "You need to be a vendor to view orders.",
+                reply_markup=main_menu_keyboard()
+            )
 
     elif action == "settings":
         await query.edit_message_text(
@@ -582,4 +614,288 @@ async def handle_admin_text_input(
                 f"*Description Updated!*",
                 parse_mode='Markdown',
                 reply_markup=product_edit_keyboard(product_id)
+            )
+
+    # Super admin text inputs
+    elif awaiting == 'platform_wallet':
+        if _is_super_admin(user_id):
+            payout = context.bot_data.get('payout_service')
+            if payout and len(text) >= 95 and (text.startswith('4') or text.startswith('8')):
+                payout.set_platform_wallet(text)
+                context.user_data['awaiting_input'] = None
+                await update.message.reply_text(
+                    f"*Platform Wallet Set!*\n\n`{text[:30]}...`",
+                    parse_mode='Markdown',
+                    reply_markup=super_admin_keyboard()
+                )
+            else:
+                await update.message.reply_text(
+                    "Invalid Monero address. Please send a valid XMR address."
+                )
+
+    elif awaiting == 'custom_commission':
+        if _is_super_admin(user_id):
+            try:
+                rate = float(text)
+                if 0 < rate < 1:
+                    payout = context.bot_data.get('payout_service')
+                    if payout:
+                        from decimal import Decimal
+                        payout.set_platform_commission_rate(Decimal(str(rate)))
+                        context.user_data['awaiting_input'] = None
+                        await update.message.reply_text(
+                            f"*Commission Rate Set!*\n\n{rate * 100:.1f}%",
+                            parse_mode='Markdown',
+                            reply_markup=super_admin_keyboard()
+                        )
+                else:
+                    await update.message.reply_text(
+                        "Invalid rate. Enter a decimal between 0 and 1 (e.g., 0.05 for 5%)."
+                    )
+            except ValueError:
+                await update.message.reply_text(
+                    "Invalid rate. Enter a decimal (e.g., 0.05 for 5%)."
+                )
+
+    elif awaiting == 'shipping_note':
+        order_id = context.user_data.get('shipping_order')
+        orders = context.bot_data.get('orders')
+        if order_id and orders:
+            try:
+                note = text if text.lower() != 'skip' else None
+                order = orders.mark_shipped(order_id, shipping_note=note)
+                context.user_data['awaiting_input'] = None
+                context.user_data['shipping_order'] = None
+                await update.message.reply_text(
+                    f"*Order #{order_id} Shipped!*\n\n"
+                    f"Status: {order.state}",
+                    parse_mode='Markdown',
+                    reply_markup=vendor_order_detail_keyboard(order_id, order.state)
+                )
+            except Exception as e:
+                await update.message.reply_text(
+                    f"Error: {str(e)}",
+                    reply_markup=main_menu_keyboard()
+                )
+
+
+# Super admin command
+@handle_errors
+async def super_admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show super admin panel."""
+    user_id = update.effective_user.id
+    if not _is_super_admin(user_id):
+        await update.message.reply_text("Access denied.")
+        return
+
+    await update.message.reply_text(
+        "*Super Admin Panel*\n\n"
+        "Platform management controls:",
+        parse_mode='Markdown',
+        reply_markup=super_admin_keyboard()
+    )
+
+
+# Super admin callback handler
+async def handle_super_admin_callback(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    payout: PayoutService = None,
+) -> None:
+    """Handle super admin callbacks."""
+    query = update.callback_query
+    await query.answer()
+
+    user_id = update.effective_user.id
+    if not _is_super_admin(user_id):
+        await query.edit_message_text("Access denied.")
+        return
+
+    data = query.data
+    parts = data.split(":")
+
+    if len(parts) < 2:
+        return
+
+    action = parts[1]
+
+    if action == "main":
+        await query.edit_message_text(
+            "*Super Admin Panel*\n\n"
+            "Platform management controls:",
+            parse_mode='Markdown',
+            reply_markup=super_admin_keyboard()
+        )
+
+    elif action == "stats" and payout:
+        stats = payout.get_platform_stats()
+        wallet_display = stats['platform_wallet'][:20] + "..." if stats['platform_wallet'] else "Not set"
+        await query.edit_message_text(
+            f"*Platform Statistics*\n\n"
+            f"*Orders:* {stats['paid_orders']}/{stats['total_orders']} paid\n"
+            f"*Commission Earned:* {stats['total_commission_xmr']:.6f} XMR\n\n"
+            f"*Pending Payouts:* {stats['pending_payouts']} ({stats['pending_payout_amount_xmr']:.6f} XMR)\n"
+            f"*Completed Payouts:* {stats['completed_payouts']} ({stats['completed_payout_amount_xmr']:.6f} XMR)\n\n"
+            f"*Commission Rate:* {float(stats['commission_rate']) * 100:.1f}%\n"
+            f"*Platform Wallet:* `{wallet_display}`",
+            parse_mode='Markdown',
+            reply_markup=super_admin_keyboard()
+        )
+
+    elif action == "commission" and payout:
+        current_rate = str(payout.get_platform_commission_rate())
+        await query.edit_message_text(
+            "*Set Commission Rate*\n\n"
+            "Select a commission rate or enter a custom value.",
+            parse_mode='Markdown',
+            reply_markup=commission_rate_keyboard(current_rate)
+        )
+
+    elif action == "set_commission" and len(parts) >= 3 and payout:
+        from decimal import Decimal
+        rate = Decimal(parts[2])
+        payout.set_platform_commission_rate(rate)
+        await query.edit_message_text(
+            f"*Commission Rate Updated!*\n\n"
+            f"New rate: {float(rate) * 100:.1f}%",
+            parse_mode='Markdown',
+            reply_markup=super_admin_keyboard()
+        )
+
+    elif action == "custom_commission":
+        context.user_data['awaiting_input'] = 'custom_commission'
+        await query.edit_message_text(
+            "*Custom Commission Rate*\n\n"
+            "Enter the rate as a decimal (e.g., 0.05 for 5%):",
+            parse_mode='Markdown'
+        )
+
+    elif action == "wallet":
+        context.user_data['awaiting_input'] = 'platform_wallet'
+        await query.edit_message_text(
+            "*Set Platform Wallet*\n\n"
+            "Enter the Monero (XMR) address for platform earnings:",
+            parse_mode='Markdown'
+        )
+
+    elif action == "payouts" and payout:
+        results = await payout.process_payouts()
+        await query.edit_message_text(
+            f"*Payouts Processed*\n\n"
+            f"*Total:* {results['processed']}\n"
+            f"*Sent:* {results['sent']}\n"
+            f"*Failed:* {results['failed']}\n"
+            f"*Skipped:* {results['skipped']}",
+            parse_mode='Markdown',
+            reply_markup=super_admin_keyboard()
+        )
+
+    elif action == "pending" and payout:
+        pending = payout.get_pending_payouts()
+        if not pending:
+            await query.edit_message_text(
+                "*Pending Payouts*\n\nNo pending payouts.",
+                parse_mode='Markdown',
+                reply_markup=super_admin_keyboard()
+            )
+        else:
+            lines = []
+            for p in pending[:10]:
+                lines.append(f"Order #{p.order_id}: {p.amount_xmr:.6f} XMR")
+            await query.edit_message_text(
+                f"*Pending Payouts*\n\n" + "\n".join(lines),
+                parse_mode='Markdown',
+                reply_markup=super_admin_keyboard()
+            )
+
+    elif action == "vendors":
+        await query.edit_message_text(
+            "*Vendor Management*\n\n"
+            "Use /vendors to list all vendors.\n"
+            "Use /commission <vendor_id> <rate> to set vendor rates.",
+            parse_mode='Markdown',
+            reply_markup=super_admin_keyboard()
+        )
+
+
+# Vendor order management callback handler
+async def handle_vendor_order_callback(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    orders: OrderService = None,
+    vendors: VendorService = None,
+) -> None:
+    """Handle vendor order management callbacks."""
+    query = update.callback_query
+    await query.answer()
+
+    user_id = update.effective_user.id
+    if not vendors:
+        return
+
+    vendor = vendors.get_by_telegram_id(user_id)
+    if not vendor:
+        await query.edit_message_text(
+            "You need to be a vendor to manage orders.",
+            reply_markup=main_menu_keyboard()
+        )
+        return
+
+    data = query.data
+    parts = data.split(":")
+
+    if len(parts) < 2:
+        return
+
+    action = parts[1]
+
+    if action == "view" and len(parts) >= 3 and orders:
+        order_id = int(parts[2])
+        order = orders.get_order(order_id)
+        if order and order.vendor_id == vendor.id:
+            delivery_addr = orders.get_address(order)
+            addr_display = delivery_addr[:40] + "..." if len(delivery_addr) > 40 else delivery_addr
+
+            shipped_info = ""
+            if order.shipped_at:
+                shipped_info = f"\n*Shipped:* {order.shipped_at.strftime('%Y-%m-%d %H:%M')}"
+            if order.shipping_note:
+                shipped_info += f"\n*Note:* {order.shipping_note}"
+
+            await query.edit_message_text(
+                f"*Order #{order_id}*\n\n"
+                f"*Status:* {order.state}\n"
+                f"*Quantity:* {order.quantity}\n"
+                f"*Address:* {addr_display}{shipped_info}",
+                parse_mode='Markdown',
+                reply_markup=vendor_order_detail_keyboard(order_id, order.state)
+            )
+        else:
+            await query.answer("Order not found", show_alert=True)
+
+    elif action == "ship" and len(parts) >= 3:
+        order_id = int(parts[2])
+        context.user_data['awaiting_input'] = 'shipping_note'
+        context.user_data['shipping_order'] = order_id
+        await query.edit_message_text(
+            f"*Ship Order #{order_id}*\n\n"
+            f"Enter a shipping note (or 'skip' for none):\n"
+            f"(e.g., tracking number, carrier, estimated delivery)",
+            parse_mode='Markdown'
+        )
+
+    elif action == "complete" and len(parts) >= 3 and orders:
+        order_id = int(parts[2])
+        try:
+            order = orders.mark_completed(order_id)
+            await query.edit_message_text(
+                f"*Order #{order_id} Completed!*\n\n"
+                f"The order has been marked as completed.",
+                parse_mode='Markdown',
+                reply_markup=vendor_order_detail_keyboard(order_id, order.state)
+            )
+        except Exception as e:
+            await query.edit_message_text(
+                f"Error: {str(e)}",
+                reply_markup=main_menu_keyboard()
             )

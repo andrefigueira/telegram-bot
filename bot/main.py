@@ -19,6 +19,8 @@ from .services.catalog import CatalogService
 from .services.orders import OrderService
 from .services.payments import PaymentService
 from .services.vendors import VendorService
+from .services.postage import PostageService
+from .services.payout import PayoutService
 from .handlers import admin, user
 from .logging_config import setup_logging
 from .error_handler import error_handler
@@ -44,6 +46,8 @@ def build_app() -> Application:
     catalog = CatalogService(db)
     payments = PaymentService()
     orders = OrderService(db, payments, catalog, vendors)
+    postage = PostageService(db)
+    payout = PayoutService(db)
 
     # Build application
     application = ApplicationBuilder().token(settings.telegram_token).build()
@@ -73,7 +77,7 @@ def build_app() -> Application:
         pattern=r"^menu:"
     ))
     application.add_handler(CallbackQueryHandler(
-        lambda u, c: user.handle_setup_callback(u, c, vendors),
+        lambda u, c: user.handle_setup_callback(u, c, vendors, postage),
         pattern=r"^setup:"
     ))
     application.add_handler(CallbackQueryHandler(
@@ -85,6 +89,10 @@ def build_app() -> Application:
         pattern=r"^currency:"
     ))
     application.add_handler(CallbackQueryHandler(
+        lambda u, c: user.handle_postage_callback(u, c, vendors, postage),
+        pattern=r"^postage:"
+    ))
+    application.add_handler(CallbackQueryHandler(
         lambda u, c: user.handle_products_callback(u, c, catalog),
         pattern=r"^products:"
     ))
@@ -93,7 +101,7 @@ def build_app() -> Application:
         pattern=r"^product:"
     ))
     application.add_handler(CallbackQueryHandler(
-        lambda u, c: user.handle_order_callback(u, c, orders, catalog),
+        lambda u, c: user.handle_order_callback(u, c, orders, catalog, postage, vendors),
         pattern=r"^order:"
     ))
 
@@ -107,12 +115,25 @@ def build_app() -> Application:
         pattern=r"^vendor:"
     ))
 
+    # Vendor order management
+    application.add_handler(CallbackQueryHandler(
+        lambda u, c: admin.handle_vendor_order_callback(u, c, orders, vendors),
+        pattern=r"^vorder:"
+    ))
+
+    # Super admin handlers
+    application.add_handler(CommandHandler("superadmin", admin.super_admin_command))
+    application.add_handler(CallbackQueryHandler(
+        lambda u, c: admin.handle_super_admin_callback(u, c, payout),
+        pattern=r"^sadmin:"
+    ))
+
     # Message handler for text input (setup flows, delivery address, product creation)
     async def handle_all_text_input(update, context):
         # Try admin text input first (for product creation/editing)
         await admin.handle_admin_text_input(update, context, catalog, vendors)
         # Then user text input (for setup flows, delivery address)
-        await user.handle_text_input(update, context, orders, catalog, vendors)
+        await user.handle_text_input(update, context, orders, catalog, vendors, postage)
 
     application.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND,
@@ -123,6 +144,8 @@ def build_app() -> Application:
     application.bot_data["db"] = db
     application.bot_data["catalog"] = catalog
     application.bot_data["orders"] = orders
+    application.bot_data["postage"] = postage
+    application.bot_data["payout_service"] = payout
     application.bot_data["health_server"] = HealthCheckServer(db)
 
     return application
