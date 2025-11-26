@@ -98,11 +98,19 @@ class HealthCheckServer:
         if settings.monero_rpc_url:
             try:
                 import aiohttp
+                from aiohttp import BasicAuth
+
+                # Set up auth if credentials provided
+                auth = None
+                if settings.monero_rpc_user and settings.monero_rpc_password:
+                    auth = BasicAuth(settings.monero_rpc_user, settings.monero_rpc_password)
+
                 async with aiohttp.ClientSession() as client:
                     # Try to get wallet height (simple RPC call)
                     async with client.post(
                         settings.monero_rpc_url + "/json_rpc",
                         json={"jsonrpc": "2.0", "id": "0", "method": "get_height"},
+                        auth=auth,
                         timeout=aiohttp.ClientTimeout(total=5)
                     ) as resp:
                         if resp.status == 200:
@@ -113,6 +121,13 @@ class HealthCheckServer:
                                 "url": settings.monero_rpc_url,
                                 "wallet_height": height
                             }
+                        elif resp.status == 401:
+                            status["services"]["monero_rpc"] = {
+                                "status": "auth_error",
+                                "url": settings.monero_rpc_url,
+                                "error": "Authentication failed"
+                            }
+                            all_ok = False
                         else:
                             status["services"]["monero_rpc"] = {
                                 "status": "error",

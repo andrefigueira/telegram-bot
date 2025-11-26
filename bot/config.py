@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     admin_ids: str = Field("", env="ADMIN_IDS")
     super_admin_ids: str = Field("", env="SUPER_ADMIN_IDS")
     monero_rpc_url: str = Field("", env="MONERO_RPC_URL")
+    monero_rpc_user: str = Field("", env="MONERO_RPC_USER")
+    monero_rpc_password: str = Field("", env="MONERO_RPC_PASSWORD")
     encryption_key: str = Field("", env="ENCRYPTION_KEY")
     totp_secret: str | None = Field(None, env="TOTP_SECRET")
     data_retention_days: int = Field(30, env="DATA_RETENTION_DAYS")

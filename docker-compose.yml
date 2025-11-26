@@ -11,10 +11,15 @@ services:
       - ENVIRONMENT=production
       - DATABASE_URL=sqlite:////app/data/db.sqlite3
       - LOG_FILE=/app/logs/bot.log
+      - MONERO_RPC_URL=http://monero-wallet:18082
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
-    network_mode: host  # Use host network to access Monero RPC on localhost
+    ports:
+      - "8080:8080"
+    depends_on:
+      monero-wallet:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
@@ -27,14 +32,39 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+    networks:
+      - bot-network
 
-  # Optional: Monero node for production
-  # monero:
-  #   image: monerod:latest
-  #   container_name: monero-node
-  #   volumes:
-  #     - ./monero-data:/home/monero/.bitmonero
-  #   ports:
-  #     - "18080:18080"
-  #     - "18081:18081"
-  #   restart: unless-stopped
+  monero-wallet:
+    image: sethsimmons/simple-monero-wallet-rpc:latest
+    container_name: monero-wallet
+    volumes:
+      - ./monero-wallet:/wallet
+    environment:
+      - DAEMON_HOST=node.moneroworld.com
+      - DAEMON_PORT=18089
+      - RPC_BIND_PORT=18082
+      - WALLET_FILE=/wallet/bot-wallet
+      - WALLET_PASSWORD=${MONERO_WALLET_PASSWORD:-changeme}
+      - CONFIRM_EXTERNAL_BIND=1
+      - RPC_LOGIN=${MONERO_RPC_USER:-monero}:${MONERO_RPC_PASSWORD:-rpcpassword}
+    ports:
+      - "127.0.0.1:18082:18082"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:18082/json_rpc", "-d", '{"jsonrpc":"2.0","id":"0","method":"get_height"}', "-H", "Content-Type: application/json"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - bot-network
+
+networks:
+  bot-network:
+    driver: bridge
