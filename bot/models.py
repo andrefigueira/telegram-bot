@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
+from sqlalchemy import Column, Numeric
 from sqlmodel import Field, SQLModel, create_engine, Session, select
 from typing import Optional, List
 from datetime import datetime
@@ -16,8 +18,9 @@ class Product(SQLModel, table=True):
     name: str
     description: str
     category: Optional[str] = None
-    price_xmr: float  # Price in XMR (legacy or converted)
-    price_fiat: Optional[float] = None  # Price in fiat currency
+    # Use sa_column for Decimal type to ensure precision
+    price_xmr: Decimal = Field(default=Decimal("0"), sa_column=Column(Numeric(precision=20, scale=8, asdecimal=True)))
+    price_fiat: Optional[Decimal] = Field(default=None, sa_column=Column(Numeric(precision=20, scale=2, asdecimal=True)))
     currency: str = "XMR"  # Currency code (USD, GBP, EUR, XMR)
     media_id: Optional[str] = None
     inventory: int = 0
@@ -31,7 +34,7 @@ class Vendor(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     telegram_id: int
     name: str
-    commission_rate: float = 0.05
+    commission_rate: Decimal = Field(default=Decimal("0.05"), sa_column=Column(Numeric(precision=10, scale=4, asdecimal=True)))
     # Vendor settings (persisted)
     pricing_currency: str = "USD"
     shop_name: Optional[str] = None
@@ -49,7 +52,7 @@ class Order(SQLModel, table=True):
     quantity: int
     payment_id: str
     address_encrypted: str
-    commission_xmr: float = 0.0
+    commission_xmr: Decimal = Field(default=Decimal("0"), sa_column=Column(Numeric(precision=20, scale=8, asdecimal=True)))
     state: str = "NEW"
     created_at: datetime = Field(default_factory=datetime.utcnow)
 

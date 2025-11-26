@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import List
 from datetime import datetime, timedelta
 from sqlmodel import select
@@ -50,10 +51,12 @@ class OrderService:
         payment_address, payment_id = self.payments.create_address(
             vendor_wallet=vendor.wallet_address
         )
-        
-        # Calculate total and commission
-        total_xmr = product.price_xmr * quantity
-        commission = total_xmr * vendor.commission_rate
+
+        # Calculate total and commission using Decimal for precision
+        price_xmr = Decimal(str(product.price_xmr)) if not isinstance(product.price_xmr, Decimal) else product.price_xmr
+        commission_rate = Decimal(str(vendor.commission_rate)) if not isinstance(vendor.commission_rate, Decimal) else vendor.commission_rate
+        total_xmr = price_xmr * Decimal(quantity)
+        commission = total_xmr * commission_rate
         
         # Encrypt delivery address
         encrypted = encrypt(address, self.settings.encryption_key)
@@ -124,7 +127,9 @@ class OrderService:
             if not product:
                 raise ValueError("Product not found")
 
-            total_xmr = product.price_xmr * order.quantity
+            # Use Decimal for precise calculation
+            price_xmr = Decimal(str(product.price_xmr)) if not isinstance(product.price_xmr, Decimal) else product.price_xmr
+            total_xmr = price_xmr * Decimal(order.quantity)
 
             # For XMR, use the existing payment address
             if coin == "XMR":

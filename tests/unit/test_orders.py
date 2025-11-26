@@ -1,3 +1,4 @@
+from decimal import Decimal
 from bot.services.orders import OrderService
 from bot.services.payments import PaymentService
 from bot.services.catalog import CatalogService
@@ -13,8 +14,8 @@ def test_create_and_mark_paid(monkeypatch, tmp_path) -> None:
     key = base64.b64encode(os.urandom(32)).decode()
     settings = Settings(
         telegram_token="123:ABC",
-        admin_ids=[],
-        super_admin_ids=[],
+        admin_ids="",  # String, not list
+        super_admin_ids="",  # String, not list
         monero_rpc_url="url",
         encryption_key=key,
         data_retention_days=30,
@@ -31,18 +32,20 @@ def test_create_and_mark_paid(monkeypatch, tmp_path) -> None:
     payments = PaymentService()
     orders = OrderService(db, payments, catalog, vendors)
     product = catalog.add_product(
-        Product(name="p", description="", price_xmr=1.0, inventory=10, vendor_id=vendor.id)
+        Product(name="p", description="", price_xmr=Decimal("1.0"), inventory=10, vendor_id=vendor.id)
     )
     order_data = orders.create_order(product.id, 1, "addr")
     order_id = order_data["order_id"]
-    assert order_data["total_xmr"] == 1.0
+    assert order_data["total_xmr"] == Decimal("1.0")
     assert order_data["quantity"] == 1
-    
+
     # Get the actual order object for testing
     order = orders.get_order(order_id)
-    assert order.commission_xmr == pytest.approx(0.05)
+    assert order.commission_xmr == Decimal("0.05")
     assert orders.get_address(order) == "addr"
     
+    # Mock check_paid to return True for test
+    monkeypatch.setattr(payments, "check_paid", lambda payment_id: True)
     updated = orders.mark_paid(order_id)
     assert updated.state == "PAID"
     fetched = orders.get_order(order_id)
@@ -77,7 +80,7 @@ def test_create_order_errors(tmp_path) -> None:
     
     vend = vendors.add_vendor(Vendor(telegram_id=2, name="v"))
     product = catalog.add_product(
-        Product(name="p", description="", price_xmr=1.0, inventory=1, vendor_id=vend.id)
+        Product(name="p", description="", price_xmr=Decimal("1.0"), inventory=1, vendor_id=vend.id)
     )
     
     # Test insufficient inventory
