@@ -15,6 +15,25 @@ environment = "production"
 
 # Bot configuration
 telegram_token = "your-telegram-bot-token"
-encryption_key = "your-base64-encryption-key"
-monero_rpc_url = ""  # Leave empty if not using Monero yet
+encryption_key = "your-base64-encryption-key"  # Generate with: openssl rand -base64 32
 admin_ids      = "123456789"  # Your Telegram user ID
+super_admin_ids = ""  # Comma-separated super admin IDs
+totp_secret    = ""   # Optional TOTP secret for 2FA
+
+# Monero configuration
+monero_wallet_password = "your-secure-wallet-password"
+monero_rpc_user        = "monero"
+monero_rpc_password    = "your-secure-rpc-password"
+
+# MySQL configuration
+mysql_root_password = "your-secure-root-password"
+mysql_database      = "telegram_bot"
+mysql_user          = "bot"
+mysql_password      = "your-secure-mysql-password"
+
+# Domain (optional)
+domain = ""  # e.g., api.yourdomain.com
+
+# Docker Hub (optional)
+dockerhub_username = ""
+dockerhub_token    = ""

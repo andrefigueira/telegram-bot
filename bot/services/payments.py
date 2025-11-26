@@ -24,13 +24,16 @@ class MoneroPaymentService:
         """Get or create wallet connection."""
         if self._wallet is None and self.settings.monero_rpc_url:
             try:
+                from monero.wallet import Wallet
                 from monero.backends.jsonrpc import JSONRPCWallet
-                # Pass user/password for digest auth
-                self._wallet = JSONRPCWallet(
+                # Create backend with digest auth credentials
+                backend = JSONRPCWallet(
                     host=self.settings.monero_rpc_url,
                     user=self.settings.monero_rpc_user or None,
                     password=self.settings.monero_rpc_password or None,
                 )
+                # Wrap backend with Wallet for full API access
+                self._wallet = Wallet(backend)
             except Exception as e:
                 logger.error(f"Failed to connect to Monero wallet: {e}")
                 raise RetryableError("Monero wallet connection failed")

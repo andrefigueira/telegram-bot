@@ -59,14 +59,45 @@ variable "encryption_key" {
 }
 
 variable "monero_rpc_url" {
-  description = "Monero wallet RPC URL"
+  description = "Monero wallet RPC URL (internal Docker network)"
   type        = string
-  default     = ""
+  default     = "http://monero-wallet:18083"
+}
+
+variable "monero_wallet_password" {
+  description = "Password for the Monero wallet"
+  type        = string
+  sensitive   = true
+}
+
+variable "monero_rpc_user" {
+  description = "Monero RPC username"
+  type        = string
+  default     = "monero"
+}
+
+variable "monero_rpc_password" {
+  description = "Monero RPC password"
+  type        = string
+  sensitive   = true
 }
 
 variable "admin_ids" {
   description = "Comma-separated Telegram admin IDs"
   type        = string
+}
+
+variable "super_admin_ids" {
+  description = "Comma-separated Telegram super admin IDs"
+  type        = string
+  default     = ""
+}
+
+variable "totp_secret" {
+  description = "TOTP secret for 2FA (optional)"
+  type        = string
+  sensitive   = true
+  default     = ""
 }
 
 variable "domain" {
@@ -83,6 +114,31 @@ variable "dockerhub_username" {
 
 variable "dockerhub_token" {
   description = "Docker Hub access token"
+  type        = string
+  sensitive   = true
+}
+
+# MySQL Configuration
+variable "mysql_root_password" {
+  description = "MySQL root password"
+  type        = string
+  sensitive   = true
+}
+
+variable "mysql_database" {
+  description = "MySQL database name"
+  type        = string
+  default     = "telegram_bot"
+}
+
+variable "mysql_user" {
+  description = "MySQL user"
+  type        = string
+  default     = "bot"
+}
+
+variable "mysql_password" {
+  description = "MySQL user password"
   type        = string
   sensitive   = true
 }

@@ -9,7 +9,6 @@ packages:
   - git
   - curl
   - wget
-  - bzip2
   - fail2ban
   - ufw
   - unattended-upgrades
@@ -22,13 +21,42 @@ write_files:
   - path: /opt/telegram-bot/.env
     permissions: "0600"
     content: |
+      # Core Configuration
       TELEGRAM_TOKEN=${telegram_token}
       ENCRYPTION_KEY=${encryption_key}
-      MONERO_RPC_URL=http://localhost:18082
+
+      # Monero Wallet RPC Configuration
+      MONERO_RPC_URL=http://monero-wallet:18083
+      MONERO_WALLET_PASSWORD=${monero_wallet_password}
+      MONERO_RPC_USER=${monero_rpc_user}
+      MONERO_RPC_PASSWORD=${monero_rpc_password}
+
+      # Admin Configuration
       ADMIN_IDS=${admin_ids}
-      ENVIRONMENT=${environment}
+      SUPER_ADMIN_IDS=${super_admin_ids}
+      TOTP_SECRET=${totp_secret}
+
+      # Data Management
       DATA_RETENTION_DAYS=30
+      DEFAULT_COMMISSION_RATE=0.05
+
+      # Logging Configuration
       LOG_LEVEL=INFO
+      LOG_FILE=/app/logs/bot.log
+
+      # Production Settings
+      ENVIRONMENT=${environment}
+      DATABASE_URL=mysql+pymysql://${mysql_user}:${mysql_password}@mysql:3306/${mysql_database}
+      MAX_RETRIES=3
+      RETRY_DELAY=5
+
+      # MySQL Configuration
+      MYSQL_ROOT_PASSWORD=${mysql_root_password}
+      MYSQL_DATABASE=${mysql_database}
+      MYSQL_USER=${mysql_user}
+      MYSQL_PASSWORD=${mysql_password}
+
+      # Health Check Configuration
       HEALTH_CHECK_ENABLED=true
       HEALTH_CHECK_PORT=8080
 
@@ -36,39 +64,15 @@ write_files:
     permissions: "0644"
     content: |
       [Unit]
-      Description=Telegram Bot
-      After=docker.service monero-wallet-rpc.service
+      Description=Telegram Bot Docker Compose
+      After=docker.service
       Requires=docker.service
-      Wants=monero-wallet-rpc.service
 
       [Service]
       Type=simple
       WorkingDirectory=/opt/telegram-bot
       ExecStart=/usr/bin/docker compose up
       ExecStop=/usr/bin/docker compose down
-      Restart=always
-      RestartSec=10
-
-      [Install]
-      WantedBy=multi-user.target
-
-  - path: /etc/systemd/system/monero-wallet-rpc.service
-    permissions: "0644"
-    content: |
-      [Unit]
-      Description=Monero Wallet RPC
-      After=network.target
-
-      [Service]
-      Type=simple
-      User=monero
-      ExecStart=/opt/monero/monero-wallet-rpc \
-        --daemon-address node.moneroworld.com:18089 \
-        --rpc-bind-ip 127.0.0.1 \
-        --rpc-bind-port 18082 \
-        --disable-rpc-login \
-        --wallet-dir /opt/monero/wallets \
-        --confirm-external-bind
       Restart=always
       RestartSec=10
 
@@ -191,34 +195,18 @@ runcmd:
   - curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 -o /root/.docker/cli-plugins/docker-compose
   - chmod +x /root/.docker/cli-plugins/docker-compose
 
-  # Create monero user with no shell
-  - useradd -r -m -d /opt/monero -s /usr/sbin/nologin monero
-
-  # Download Monero CLI
-  - cd /tmp && wget -q https://downloads.getmonero.org/cli/linux64
-  - tar -xjf /tmp/linux64 -C /opt/monero --strip-components=1
-  - chown -R monero:monero /opt/monero
-  - chmod 700 /opt/monero
-
-  # Create wallet directory with strict permissions
-  - mkdir -p /opt/monero/wallets
-  - chown monero:monero /opt/monero/wallets
-  - chmod 700 /opt/monero/wallets
-
-  # Docker Hub login
-  - echo '${dockerhub_token}' | docker login -u '${dockerhub_username}' --password-stdin
-
-  # Bot setup
-  - mkdir -p /opt/telegram-bot/data /opt/telegram-bot/logs
+  # Bot setup - create directories
+  - mkdir -p /opt/telegram-bot/data /opt/telegram-bot/logs /opt/telegram-bot/monero-wallet
   - chmod 777 /opt/telegram-bot/data /opt/telegram-bot/logs
-  - chmod 700 /opt/telegram-bot
-  - cd /opt/telegram-bot && curl -fsSL ${docker_compose_url} -o docker-compose.yml
-  - docker pull polyxmedia/telegrambot:latest
+  - chmod 700 /opt/telegram-bot /opt/telegram-bot/monero-wallet
+
+  # Clone repository and setup
+  - git clone https://github.com/${github_repo}.git /tmp/telegram-bot-repo
+  - cp /tmp/telegram-bot-repo/docker-compose.yml /opt/telegram-bot/
+  - rm -rf /tmp/telegram-bot-repo
 
   # Start services
   - systemctl daemon-reload
-  - systemctl enable monero-wallet-rpc
-  - systemctl start monero-wallet-rpc
   - systemctl enable telegram-bot
   - systemctl start telegram-bot
 
@@ -229,6 +217,5 @@ runcmd:
   - systemctl start nginx
 
   # Cleanup
-  - rm -f /tmp/linux64
   - apt-get clean
   - rm -rf /var/lib/apt/lists/*

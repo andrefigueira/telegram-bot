@@ -26,15 +26,22 @@ resource "digitalocean_droplet" "bot" {
   ssh_keys = [digitalocean_ssh_key.default.fingerprint]
 
   user_data = templatefile("${path.module}/cloud-init.yaml", {
-    telegram_token      = var.telegram_token
-    encryption_key      = var.encryption_key
-    monero_rpc_url      = var.monero_rpc_url
-    admin_ids           = var.admin_ids
-    environment         = var.environment
-    domain              = var.domain
-    dockerhub_username  = var.dockerhub_username
-    dockerhub_token     = var.dockerhub_token
-    docker_compose_url  = "https://raw.githubusercontent.com/${var.github_repo}/main/docker-compose.prod.yml"
+    telegram_token         = var.telegram_token
+    encryption_key         = var.encryption_key
+    monero_rpc_url         = var.monero_rpc_url
+    monero_wallet_password = var.monero_wallet_password
+    monero_rpc_user        = var.monero_rpc_user
+    monero_rpc_password    = var.monero_rpc_password
+    admin_ids              = var.admin_ids
+    super_admin_ids        = var.super_admin_ids
+    totp_secret            = var.totp_secret
+    environment            = var.environment
+    domain                 = var.domain
+    github_repo            = var.github_repo
+    mysql_root_password    = var.mysql_root_password
+    mysql_database         = var.mysql_database
+    mysql_user             = var.mysql_user
+    mysql_password         = var.mysql_password
   })
 
   tags = ["telegram-bot", var.environment]

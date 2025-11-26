@@ -9,16 +9,18 @@ services:
       - .env
     environment:
       - ENVIRONMENT=production
-      - DATABASE_URL=sqlite:////app/data/db.sqlite3
+      - DATABASE_URL=mysql+pymysql://${MYSQL_USER:-bot}:${MYSQL_PASSWORD:-botpassword}@mysql:3306/${MYSQL_DATABASE:-telegram_bot}
       - LOG_FILE=/app/logs/bot.log
       - MONERO_RPC_URL=http://monero-wallet:18083
     volumes:
-      - ./data:/app/data
       - ./logs:/app/logs
     ports:
       - "8080:8080"
     depends_on:
-      - monero-wallet
+      mysql:
+        condition: service_healthy
+      monero-wallet:
+        condition: service_started
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
@@ -26,6 +28,31 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - bot-network
+
+  mysql:
+    image: mysql:8.0
+    container_name: telegram-bot-mysql
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-rootpassword}
+      - MYSQL_DATABASE=${MYSQL_DATABASE:-telegram_bot}
+      - MYSQL_USER=${MYSQL_USER:-bot}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:-botpassword}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-rootpassword}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     logging:
       driver: "json-file"
       options:
@@ -66,3 +93,6 @@ services:
 networks:
   bot-network:
     driver: bridge
+
+volumes:
+  mysql-data:
