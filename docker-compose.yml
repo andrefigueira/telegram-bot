@@ -18,8 +18,7 @@ services:
     ports:
       - "8080:8080"
     depends_on:
-      monero-wallet:
-        condition: service_healthy
+      - monero-wallet
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
