@@ -26,13 +26,27 @@ class CatalogService:
         with self.db.session() as session:
             return session.get(Product, product_id)
 
-    def update_product(self, product: Product) -> Product:
-        """Persist updates to a product."""
+    def update_product(self, product_or_id, **kwargs) -> Product | None:
+        """Persist updates to a product.
+
+        Can be called with a Product object or product_id with keyword args.
+        """
         with self.db.session() as session:
-            session.add(product)
-            session.commit()
-            session.refresh(product)
-            return product
+            if isinstance(product_or_id, Product):
+                session.add(product_or_id)
+                session.commit()
+                session.refresh(product_or_id)
+                return product_or_id
+            else:
+                # product_id with kwargs
+                product = session.get(Product, product_or_id)
+                if product:
+                    for key, value in kwargs.items():
+                        setattr(product, key, value)
+                    session.commit()
+                    session.refresh(product)
+                    return product
+                return None
 
     def delete_product(self, product_id: int) -> None:
         """Remove a product from the catalog."""
