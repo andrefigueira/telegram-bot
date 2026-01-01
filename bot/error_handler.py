@@ -13,15 +13,28 @@ logger = logging.getLogger(__name__)
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Global error handler for the bot."""
+    error_message = str(context.error)
+
+    # Ignore benign Telegram API errors
+    benign_errors = [
+        "Message is not modified",
+        "Query is too old",
+        "message to edit not found",
+    ]
+
+    if any(msg in error_message for msg in benign_errors):
+        logger.debug(f"Ignoring benign error: {error_message}")
+        return
+
     logger.error(f"Exception while handling an update: {context.error}")
-    
+
     # Log the full traceback
     tb_list = traceback.format_exception(
         None, context.error, context.error.__traceback__
     )
     tb_string = "".join(tb_list)
     logger.error(f"Traceback:\n{tb_string}")
-    
+
     # Notify user about the error (if possible)
     if update and update.effective_message:
         try:
