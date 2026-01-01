@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
-from sqlalchemy import Column, Numeric
+from sqlalchemy import Column, Numeric, BigInteger
 from sqlmodel import Field, SQLModel, create_engine, Session, select
 from typing import Optional, List
 from datetime import datetime
@@ -67,7 +67,7 @@ class Vendor(SQLModel, table=True):
     """Store vendor information."""
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    telegram_id: int
+    telegram_id: int = Field(sa_column=Column(BigInteger))
     name: str
     commission_rate: Decimal = Field(default=Decimal("0.05"), sa_column=Column(Numeric(precision=10, scale=4, asdecimal=True)))
     # Vendor settings (persisted)
