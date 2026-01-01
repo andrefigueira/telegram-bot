@@ -322,3 +322,32 @@ class TestCommissionService:
         # The invoice was paid today, so it should be included
         assert revenue["invoice_count"] == 1
         assert revenue["total_commission_xmr"] == Decimal("5.0")
+
+    # ==================== EDGE CASE TESTS ====================
+
+
+    def test_check_payment_nonexistent_invoice(self, commission_service):
+        """Test check_payment with non-existent invoice."""
+        result = commission_service.check_payment(99999, Decimal("1.0"))
+        assert result is False
+
+    def test_process_overdue_invoices_not_yet_due(self, commission_service, db):
+        """Test processing invoices that are not yet overdue."""
+        tenant = db.create_tenant("notdue@test.com", "hash", "1.0")
+        db.update_tenant(tenant.id, bot_active=True)
+
+        # Create invoice with due date in the future
+        from datetime import datetime, timedelta
+        future_due = datetime.utcnow() + timedelta(days=30)
+        invoice = db.create_commission_invoice(
+            tenant.id, date(2024, 1, 1), date(2024, 1, 7),
+            5, Decimal("50"), Decimal("0.05"), Decimal("2.5"),
+            "4AAA...", future_due
+        )
+
+        # Process overdue - should not mark this invoice as overdue
+        results = commission_service.process_overdue_invoices()
+
+        # Check the invoice is still pending
+        updated = commission_service.get_invoice(invoice.id)
+        assert updated.state == InvoiceState.PENDING

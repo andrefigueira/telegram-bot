@@ -94,11 +94,30 @@ class TestErrorHandler:
         @handle_errors
         async def test_func(update, context):
             raise ValueError("Test error")
-        
+
         context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
-        
+
         with pytest.raises(ValueError):
             await test_func(None, context)
+
+    @pytest.mark.asyncio
+    async def test_handle_errors_decorator_reply_fails(self):
+        """Test handle_errors decorator when reply_text fails."""
+        @handle_errors
+        async def test_func(update, context):
+            raise ValueError("Test error")
+
+        update = MagicMock(spec=Update)
+        message = MagicMock(spec=Message)
+        # Make reply_text raise an exception
+        message.reply_text = AsyncMock(side_effect=Exception("Reply failed"))
+        update.effective_message = message
+
+        context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
+
+        # Should still raise the original ValueError, not the reply exception
+        with pytest.raises(ValueError, match="Test error"):
+            await test_func(update, context)
 
     @pytest.mark.asyncio
     async def test_retry_on_error_success(self):

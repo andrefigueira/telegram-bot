@@ -275,3 +275,128 @@ class TestTenantService:
         assert stats["total_revenue_xmr"] == Decimal("2.0")
         assert stats["total_commission_xmr"] == Decimal("0.1")
         assert stats["net_revenue_xmr"] == Decimal("1.9")
+
+    # ==================== EDGE CASE TESTS ====================
+
+    def test_update_profile_no_changes(self, tenant_service):
+        """Test profile update with no changes returns current tenant."""
+        tenant = tenant_service.register("nochange@test.com", "pass", True)
+
+        # Update without providing any values
+        result = tenant_service.update_profile(tenant.id)
+
+        assert result is not None
+        assert result.id == tenant.id
+
+    def test_update_profile_all_fields(self, tenant_service):
+        """Test profile update with all fields including view key."""
+        tenant = tenant_service.register("allfields@test.com", "pass", True)
+
+        updated = tenant_service.update_profile(
+            tenant.id,
+            shop_name="Complete Shop",
+            monero_wallet_address="4AAAA...",
+            monero_view_key="viewkey123"
+        )
+
+        assert updated.shop_name == "Complete Shop"
+        assert updated.monero_wallet_address == "4AAAA..."
+        assert updated.monero_view_key == "viewkey123"
+
+    def test_update_profile_nonexistent(self, tenant_service):
+        """Test profile update for nonexistent tenant."""
+        result = tenant_service.update_profile("nonexistent_id", shop_name="Test")
+
+        assert result is None
+
+    def test_connect_bot_invalid_token_format(self, tenant_service, platform_key):
+        """Test connecting bot with invalid token format."""
+        tenant = tenant_service.register("badtoken@test.com", "pass", True)
+
+        # Token without colon separator - triggers exception path
+        updated = tenant_service.connect_bot(
+            tenant.id,
+            bot_token="invalid_token_no_colon",
+            platform_encryption_key=platform_key
+        )
+
+        assert updated is not None
+        assert updated.bot_token_encrypted is not None
+        # bot_username might be None due to exception
+        assert updated.bot_active is True
+
+    def test_connect_bot_nonexistent_tenant(self, tenant_service, platform_key):
+        """Test connecting bot for nonexistent tenant."""
+        result = tenant_service.connect_bot(
+            "nonexistent_tenant",
+            bot_token="123:token",
+            platform_encryption_key=platform_key
+        )
+
+        assert result is None
+
+    def test_disconnect_bot_nonexistent(self, tenant_service):
+        """Test disconnecting bot for nonexistent tenant."""
+        result = tenant_service.disconnect_bot("nonexistent_id")
+
+        assert result is None
+
+    def test_setup_totp_nonexistent(self, tenant_service):
+        """Test TOTP setup for nonexistent tenant."""
+        result = tenant_service.setup_totp("nonexistent_id")
+
+        assert result is None
+
+    def test_deactivate_nonexistent_tenant(self, tenant_service):
+        """Test deactivating nonexistent tenant."""
+        result = tenant_service.deactivate_tenant("nonexistent_id")
+
+        assert result is False
+
+    def test_get_tenant_stats_nonexistent(self, tenant_service):
+        """Test getting stats for nonexistent tenant."""
+        stats = tenant_service.get_tenant_stats("nonexistent_id")
+
+        # Should return empty stats
+        assert stats["total_products"] == 0
+        assert stats["total_orders"] == 0
+
+    def test_decrypt_bot_token_wrong_key(self, tenant_service, platform_key):
+        """Test decrypting bot token with wrong key returns None."""
+        tenant = tenant_service.register("wrongkey@test.com", "pass", True)
+        original_token = "123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
+
+        tenant_service.connect_bot(tenant.id, original_token, platform_key)
+
+        # Get fresh tenant from DB
+        tenant = tenant_service.get_tenant(tenant.id)
+
+        # Try to decrypt with a different key - should fail and return None
+        wrong_key = base64.b64encode(os.urandom(32)).decode('utf-8')
+        decrypted = tenant_service.decrypt_bot_token(tenant, wrong_key)
+
+        assert decrypted is None
+
+    def test_connect_bot_token_parse_exception(self, tenant_service, platform_key):
+        """Test connect_bot handles exception during token parsing."""
+        tenant = tenant_service.register("parseexc@test.com", "pass", True)
+
+        # Create a mock token that can be encoded but raises on split
+        class MockToken:
+            def encode(self, encoding):
+                return b"mocktoken"
+            def split(self, sep):
+                raise RuntimeError("Parse error")
+
+        mock_token = MockToken()
+        updated = tenant_service.connect_bot(
+            tenant.id,
+            bot_token=mock_token,
+            platform_encryption_key=platform_key
+        )
+
+        # Should still succeed but with bot_username as None
+        assert updated is not None
+        assert updated.bot_token_encrypted is not None
+        assert updated.bot_username is None  # Due to exception
+        assert updated.bot_active is True

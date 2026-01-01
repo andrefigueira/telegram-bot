@@ -342,3 +342,607 @@ class TestChangeNowIntegration:
 
         assert order is not None
         assert order.provider == "mock"
+
+
+class TestTrocadorRateFullPath:
+    """Test Trocador rate fetching with proper async mocking."""
+
+    @pytest.fixture
+    def swap_service_trocador_only(self):
+        """Create swap service with only Trocador."""
+        return CryptoSwapService(
+            trocador_api_key="test_key",
+            changenow_api_key=None,
+            preferred_provider="trocador",
+            testnet=False
+        )
+
+    @pytest.mark.asyncio
+    async def test_trocador_rate_success_full(self, swap_service_trocador_only):
+        """Test successful Trocador rate with proper async context manager."""
+        mock_response = {
+            "success": True,
+            "amount_to": "25.5",
+            "rate": "255",
+            "id": "quote123"
+        }
+
+        mock_resp = MagicMock()
+        mock_resp.status = 200
+        mock_resp.json = AsyncMock(return_value=mock_response)
+
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_cm.__aexit__ = AsyncMock(return_value=False)
+
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(return_value=mock_cm)
+
+        with patch.object(swap_service_trocador_only, '_get_session', return_value=mock_session):
+            quote = await swap_service_trocador_only._get_trocador_rate("btc", Decimal("0.1"))
+
+            assert quote is not None
+            assert quote.from_coin == "btc"
+            assert quote.to_coin == "xmr"
+            assert quote.to_amount == Decimal("25.5")
+            assert quote.rate == Decimal("255")
+            assert quote.provider == "trocador"
+
+    @pytest.mark.asyncio
+    async def test_trocador_rate_non_200(self, swap_service_trocador_only):
+        """Test Trocador rate with non-200 response."""
+        mock_resp = MagicMock()
+        mock_resp.status = 500
+
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_cm.__aexit__ = AsyncMock(return_value=False)
+
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(return_value=mock_cm)
+
+        with patch.object(swap_service_trocador_only, '_get_session', return_value=mock_session):
+            quote = await swap_service_trocador_only._get_trocador_rate("btc", Decimal("0.1"))
+            assert quote is None
+
+    @pytest.mark.asyncio
+    async def test_trocador_rate_not_success(self, swap_service_trocador_only):
+        """Test Trocador rate with success=false."""
+        mock_response = {"success": False}
+
+        mock_resp = MagicMock()
+        mock_resp.status = 200
+        mock_resp.json = AsyncMock(return_value=mock_response)
+
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_cm.__aexit__ = AsyncMock(return_value=False)
+
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(return_value=mock_cm)
+
+        with patch.object(swap_service_trocador_only, '_get_session', return_value=mock_session):
+            quote = await swap_service_trocador_only._get_trocador_rate("btc", Decimal("0.1"))
+            assert quote is None
+
+    @pytest.mark.asyncio
+    async def test_trocador_rate_exception(self, swap_service_trocador_only):
+        """Test Trocador rate with exception."""
+        with patch.object(swap_service_trocador_only, '_get_session', side_effect=Exception("Connection error")):
+            quote = await swap_service_trocador_only._get_trocador_rate("btc", Decimal("0.1"))
+            assert quote is None
+
+
+class TestChangeNowRateFullPath:
+    """Test ChangeNow rate fetching with proper async mocking."""
+
+    @pytest.fixture
+    def swap_service_changenow_only(self):
+        """Create swap service with only ChangeNow."""
+        return CryptoSwapService(
+            trocador_api_key=None,
+            changenow_api_key="test_key",
+            preferred_provider="changenow",
+            testnet=False
+        )
+
+    @pytest.mark.asyncio
+    async def test_changenow_rate_success(self, swap_service_changenow_only):
+        """Test successful ChangeNow rate fetch."""
+        mock_response = {"toAmount": "25.5"}
+
+        mock_resp = MagicMock()
+        mock_resp.status = 200
+        mock_resp.json = AsyncMock(return_value=mock_response)
+
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_cm.__aexit__ = AsyncMock(return_value=False)
+
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(return_value=mock_cm)
+
+        with patch.object(swap_service_changenow_only, '_get_session', return_value=mock_session):
+            quote = await swap_service_changenow_only._get_changenow_rate("btc", Decimal("0.1"))
+
+            assert quote is not None
+            assert quote.to_amount == Decimal("25.5")
+            assert quote.provider == "changenow"
+
+    @pytest.mark.asyncio
+    async def test_changenow_rate_non_200(self, swap_service_changenow_only):
+        """Test ChangeNow rate with non-200 response."""
+        mock_resp = MagicMock()
+        mock_resp.status = 400
+
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_cm.__aexit__ = AsyncMock(return_value=False)
+
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(return_value=mock_cm)
+
+        with patch.object(swap_service_changenow_only, '_get_session', return_value=mock_session):
+            quote = await swap_service_changenow_only._get_changenow_rate("btc", Decimal("0.1"))
+            assert quote is None
+
+    @pytest.mark.asyncio
+    async def test_changenow_rate_exception(self, swap_service_changenow_only):
+        """Test ChangeNow rate with exception."""
+        with patch.object(swap_service_changenow_only, '_get_session', side_effect=Exception("Error")):
+            quote = await swap_service_changenow_only._get_changenow_rate("btc", Decimal("0.1"))
+            assert quote is None
+
+
+class TestGetRateFallback:
+    """Test get_rate method with provider fallback."""
+
+    @pytest.mark.asyncio
+    async def test_get_rate_no_providers(self):
+        """Test get_rate returns None when no providers available."""
+        service = CryptoSwapService(
+            trocador_api_key=None,
+            changenow_api_key=None,
+            testnet=False
+        )
+
+        result = await service.get_rate("btc", Decimal("0.1"))
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_get_rate_trocador_success(self):
+        """Test get_rate uses Trocador when available."""
+        service = CryptoSwapService(
+            trocador_api_key="key",
+            changenow_api_key="key",
+            preferred_provider="trocador",
+            testnet=False
+        )
+
+        mock_quote = SwapQuote(
+            from_coin="btc", to_coin="xmr", from_amount=Decimal("0.1"),
+            to_amount=Decimal("25"), rate=Decimal("250"), provider="trocador",
+            quote_id="q1", expires_at=datetime.utcnow()
+        )
+
+        with patch.object(service, '_get_trocador_rate', return_value=mock_quote):
+            quote = await service.get_rate("btc", Decimal("0.1"))
+            assert quote.provider == "trocador"
+
+    @pytest.mark.asyncio
+    async def test_get_rate_fallback_to_changenow(self):
+        """Test get_rate falls back to ChangeNow when Trocador fails."""
+        service = CryptoSwapService(
+            trocador_api_key="key",
+            changenow_api_key="key",
+            preferred_provider="trocador",
+            testnet=False
+        )
+
+        mock_quote = SwapQuote(
+            from_coin="btc", to_coin="xmr", from_amount=Decimal("0.1"),
+            to_amount=Decimal("25"), rate=Decimal("250"), provider="changenow",
+            quote_id="q1", expires_at=datetime.utcnow()
+        )
+
+        with patch.object(service, '_get_trocador_rate', return_value=None):
+            with patch.object(service, '_get_changenow_rate', return_value=mock_quote):
+                quote = await service.get_rate("btc", Decimal("0.1"))
+                assert quote.provider == "changenow"
+
+
+class TestCreateSwapProviders:
+    """Test create_swap with different providers."""
+
+    @pytest.mark.asyncio
+    async def test_create_swap_trocador_success(self):
+        """Test create_swap with Trocador."""
+        service = CryptoSwapService(
+            trocador_api_key="key",
+            changenow_api_key=None,
+            preferred_provider="trocador",
+            testnet=False
+        )
+
+        mock_response = {
+            "success": True,
+            "trade_id": "trade123",
+            "address_provider": "bc1qtest123",
+            "amount_to": "25.5"
+        }
+
+        mock_resp = MagicMock()
+        mock_resp.status = 200
+        mock_resp.json = AsyncMock(return_value=mock_response)
+
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_cm.__aexit__ = AsyncMock(return_value=False)
+
+        mock_session = MagicMock()
+        mock_session.post = MagicMock(return_value=mock_cm)
+
+        with patch.object(service, '_get_session', return_value=mock_session):
+            order = await service.create_swap("btc", Decimal("0.1"), "4AAA...")
+
+            assert order is not None
+            assert order.swap_id == "trade123"
+            assert order.provider == "trocador"
+
+    @pytest.mark.asyncio
+    async def test_create_swap_trocador_non_200(self):
+        """Test create_swap with Trocador non-200 response."""
+        service = CryptoSwapService(
+            trocador_api_key="key",
+            changenow_api_key=None,
+            preferred_provider="trocador",
+            testnet=False
+        )
+
+        mock_resp = MagicMock()
+        mock_resp.status = 500
+
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_cm.__aexit__ = AsyncMock(return_value=False)
+
+        mock_session = MagicMock()
+        mock_session.post = MagicMock(return_value=mock_cm)
+
+        with patch.object(service, '_get_session', return_value=mock_session):
+            order = await service.create_swap("btc", Decimal("0.1"), "4AAA...")
+            assert order is None
+
+    @pytest.mark.asyncio
+    async def test_create_swap_trocador_not_success(self):
+        """Test create_swap with Trocador success=false."""
+        service = CryptoSwapService(
+            trocador_api_key="key",
+            changenow_api_key=None,
+            preferred_provider="trocador",
+            testnet=False
+        )
+
+        mock_response = {"success": False}
+
+        mock_resp = MagicMock()
+        mock_resp.status = 200
+        mock_resp.json = AsyncMock(return_value=mock_response)
+
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_cm.__aexit__ = AsyncMock(return_value=False)
+
+        mock_session = MagicMock()
+        mock_session.post = MagicMock(return_value=mock_cm)
+
+        with patch.object(service, '_get_session', return_value=mock_session):
+            order = await service.create_swap("btc", Decimal("0.1"), "4AAA...")
+            assert order is None
+
+    @pytest.mark.asyncio
+    async def test_create_swap_trocador_exception(self):
+        """Test create_swap with Trocador exception."""
+        service = CryptoSwapService(
+            trocador_api_key="key",
+            changenow_api_key=None,
+            preferred_provider="trocador",
+            testnet=False
+        )
+
+        with patch.object(service, '_get_session', side_effect=Exception("Error")):
+            order = await service.create_swap("btc", Decimal("0.1"), "4AAA...")
+            assert order is None
+
+    @pytest.mark.asyncio
+    async def test_create_swap_changenow_success(self):
+        """Test create_swap with ChangeNow."""
+        service = CryptoSwapService(
+            trocador_api_key=None,
+            changenow_api_key="key",
+            testnet=False
+        )
+
+        mock_response = {
+            "id": "cn_trade123",
+            "payinAddress": "bc1qtest456",
+            "toAmount": "25.5"
+        }
+
+        mock_resp = MagicMock()
+        mock_resp.status = 200
+        mock_resp.json = AsyncMock(return_value=mock_response)
+
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_cm.__aexit__ = AsyncMock(return_value=False)
+
+        mock_session = MagicMock()
+        mock_session.post = MagicMock(return_value=mock_cm)
+
+        with patch.object(service, '_get_session', return_value=mock_session):
+            order = await service.create_swap("btc", Decimal("0.1"), "4AAA...")
+
+            assert order is not None
+            assert order.swap_id == "cn_trade123"
+            assert order.provider == "changenow"
+
+    @pytest.mark.asyncio
+    async def test_create_swap_changenow_with_refund(self):
+        """Test create_swap with ChangeNow and refund address."""
+        service = CryptoSwapService(
+            trocador_api_key=None,
+            changenow_api_key="key",
+            testnet=False
+        )
+
+        mock_response = {
+            "id": "cn_trade123",
+            "payinAddress": "bc1qtest456",
+            "toAmount": "25.5"
+        }
+
+        mock_resp = MagicMock()
+        mock_resp.status = 200
+        mock_resp.json = AsyncMock(return_value=mock_response)
+
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_cm.__aexit__ = AsyncMock(return_value=False)
+
+        mock_session = MagicMock()
+        mock_session.post = MagicMock(return_value=mock_cm)
+
+        with patch.object(service, '_get_session', return_value=mock_session):
+            order = await service.create_swap(
+                "btc", Decimal("0.1"), "4AAA...",
+                refund_address="bc1qrefund"
+            )
+
+            assert order is not None
+            assert order.provider == "changenow"
+
+    @pytest.mark.asyncio
+    async def test_create_swap_changenow_non_200(self):
+        """Test create_swap with ChangeNow non-200 response."""
+        service = CryptoSwapService(
+            trocador_api_key=None,
+            changenow_api_key="key",
+            testnet=False
+        )
+
+        mock_resp = MagicMock()
+        mock_resp.status = 400
+
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_cm.__aexit__ = AsyncMock(return_value=False)
+
+        mock_session = MagicMock()
+        mock_session.post = MagicMock(return_value=mock_cm)
+
+        with patch.object(service, '_get_session', return_value=mock_session):
+            order = await service.create_swap("btc", Decimal("0.1"), "4AAA...")
+            assert order is None
+
+    @pytest.mark.asyncio
+    async def test_create_swap_changenow_exception(self):
+        """Test create_swap with ChangeNow exception."""
+        service = CryptoSwapService(
+            trocador_api_key=None,
+            changenow_api_key="key",
+            testnet=False
+        )
+
+        with patch.object(service, '_get_session', side_effect=Exception("Error")):
+            order = await service.create_swap("btc", Decimal("0.1"), "4AAA...")
+            assert order is None
+
+    @pytest.mark.asyncio
+    async def test_create_swap_no_providers(self):
+        """Test create_swap returns None when no providers."""
+        service = CryptoSwapService(
+            trocador_api_key=None,
+            changenow_api_key=None,
+            testnet=False
+        )
+
+        order = await service.create_swap("btc", Decimal("0.1"), "4AAA...")
+        assert order is None
+
+
+class TestCheckSwapStatus:
+    """Test swap status checking."""
+
+    @pytest.mark.asyncio
+    async def test_check_status_trocador_success(self):
+        """Test checking Trocador swap status."""
+        service = CryptoSwapService(trocador_api_key="key")
+
+        mock_response = {"status": "complete"}
+
+        mock_resp = MagicMock()
+        mock_resp.status = 200
+        mock_resp.json = AsyncMock(return_value=mock_response)
+
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_cm.__aexit__ = AsyncMock(return_value=False)
+
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(return_value=mock_cm)
+
+        with patch.object(service, '_get_session', return_value=mock_session):
+            status = await service.check_swap_status("trade123", "trocador")
+            assert status == SwapStatus.COMPLETE
+
+    @pytest.mark.asyncio
+    async def test_check_status_trocador_statuses(self):
+        """Test Trocador status mapping."""
+        service = CryptoSwapService(trocador_api_key="key")
+
+        for api_status, expected_status in [
+            ("waiting", SwapStatus.WAITING),
+            ("confirming", SwapStatus.CONFIRMING),
+            ("exchanging", SwapStatus.EXCHANGING),
+            ("finished", SwapStatus.COMPLETE),
+            ("failed", SwapStatus.FAILED),
+            ("expired", SwapStatus.EXPIRED),
+            ("unknown", SwapStatus.WAITING),
+        ]:
+            mock_response = {"status": api_status}
+
+            mock_resp = MagicMock()
+            mock_resp.status = 200
+            mock_resp.json = AsyncMock(return_value=mock_response)
+
+            mock_cm = MagicMock()
+            mock_cm.__aenter__ = AsyncMock(return_value=mock_resp)
+            mock_cm.__aexit__ = AsyncMock(return_value=False)
+
+            mock_session = MagicMock()
+            mock_session.get = MagicMock(return_value=mock_cm)
+
+            with patch.object(service, '_get_session', return_value=mock_session):
+                status = await service._check_trocador_status("trade123")
+                assert status == expected_status
+
+    @pytest.mark.asyncio
+    async def test_check_status_trocador_non_200(self):
+        """Test Trocador status check with non-200 response."""
+        service = CryptoSwapService(trocador_api_key="key")
+
+        mock_resp = MagicMock()
+        mock_resp.status = 500
+
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_cm.__aexit__ = AsyncMock(return_value=False)
+
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(return_value=mock_cm)
+
+        with patch.object(service, '_get_session', return_value=mock_session):
+            status = await service._check_trocador_status("trade123")
+            assert status == SwapStatus.FAILED
+
+    @pytest.mark.asyncio
+    async def test_check_status_trocador_exception(self):
+        """Test Trocador status check with exception."""
+        service = CryptoSwapService(trocador_api_key="key")
+
+        with patch.object(service, '_get_session', side_effect=Exception("Error")):
+            status = await service._check_trocador_status("trade123")
+            assert status == SwapStatus.FAILED
+
+    @pytest.mark.asyncio
+    async def test_check_status_changenow_success(self):
+        """Test checking ChangeNow swap status."""
+        service = CryptoSwapService(changenow_api_key="key")
+
+        mock_response = {"status": "finished"}
+
+        mock_resp = MagicMock()
+        mock_resp.status = 200
+        mock_resp.json = AsyncMock(return_value=mock_response)
+
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_cm.__aexit__ = AsyncMock(return_value=False)
+
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(return_value=mock_cm)
+
+        with patch.object(service, '_get_session', return_value=mock_session):
+            status = await service.check_swap_status("trade123", "changenow")
+            assert status == SwapStatus.COMPLETE
+
+    @pytest.mark.asyncio
+    async def test_check_status_changenow_statuses(self):
+        """Test ChangeNow status mapping."""
+        service = CryptoSwapService(changenow_api_key="key")
+
+        for api_status, expected_status in [
+            ("new", SwapStatus.WAITING),
+            ("waiting", SwapStatus.WAITING),
+            ("confirming", SwapStatus.CONFIRMING),
+            ("exchanging", SwapStatus.EXCHANGING),
+            ("sending", SwapStatus.EXCHANGING),
+            ("finished", SwapStatus.COMPLETE),
+            ("failed", SwapStatus.FAILED),
+            ("refunded", SwapStatus.FAILED),
+            ("expired", SwapStatus.EXPIRED),
+            ("unknown", SwapStatus.WAITING),
+        ]:
+            mock_response = {"status": api_status}
+
+            mock_resp = MagicMock()
+            mock_resp.status = 200
+            mock_resp.json = AsyncMock(return_value=mock_response)
+
+            mock_cm = MagicMock()
+            mock_cm.__aenter__ = AsyncMock(return_value=mock_resp)
+            mock_cm.__aexit__ = AsyncMock(return_value=False)
+
+            mock_session = MagicMock()
+            mock_session.get = MagicMock(return_value=mock_cm)
+
+            with patch.object(service, '_get_session', return_value=mock_session):
+                status = await service._check_changenow_status("trade123")
+                assert status == expected_status
+
+    @pytest.mark.asyncio
+    async def test_check_status_changenow_non_200(self):
+        """Test ChangeNow status check with non-200 response."""
+        service = CryptoSwapService(changenow_api_key="key")
+
+        mock_resp = MagicMock()
+        mock_resp.status = 500
+
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_cm.__aexit__ = AsyncMock(return_value=False)
+
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(return_value=mock_cm)
+
+        with patch.object(service, '_get_session', return_value=mock_session):
+            status = await service._check_changenow_status("trade123")
+            assert status == SwapStatus.FAILED
+
+    @pytest.mark.asyncio
+    async def test_check_status_changenow_exception(self):
+        """Test ChangeNow status check with exception."""
+        service = CryptoSwapService(changenow_api_key="key")
+
+        with patch.object(service, '_get_session', side_effect=Exception("Error")):
+            status = await service._check_changenow_status("trade123")
+            assert status == SwapStatus.FAILED
+
+    @pytest.mark.asyncio
+    async def test_check_status_unknown_provider(self):
+        """Test status check with unknown provider returns FAILED."""
+        service = CryptoSwapService()
+
+        status = await service.check_swap_status("trade123", "unknown")
+        assert status == SwapStatus.FAILED

@@ -9,8 +9,8 @@ def test_build_app(monkeypatch) -> None:
     key = base64.b64encode(os.urandom(32)).decode()
     settings = Settings(
         telegram_token="123:ABC",
-        admin_ids=[],
-        super_admin_ids=[],
+        admin_ids="",
+        super_admin_ids="",
         monero_rpc_url="url",
         encryption_key=key,
         data_retention_days=30,

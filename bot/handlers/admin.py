@@ -423,7 +423,8 @@ async def handle_admin_text_input(
 
     # Only process admin-related inputs
     if awaiting not in ['product_name', 'product_price', 'product_stock', 'product_desc',
-                        'edit_name', 'edit_price', 'edit_stock', 'edit_desc']:
+                        'edit_name', 'edit_price', 'edit_stock', 'edit_desc',
+                        'platform_wallet', 'custom_commission', 'shipping_note']:
         return
 
     user_id = update.effective_user.id
