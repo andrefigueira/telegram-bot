@@ -25,3 +25,5 @@ def test_add_and_list_product(tmp_path) -> None:
     service.delete_product(added.id)
     assert service.get_product(added.id) is None
     service.delete_product(999)  # cover branch when product missing
+    # Test update_product returns None for non-existent product (using id + kwargs mode)
+    assert service.update_product(9999, name="X") is None
