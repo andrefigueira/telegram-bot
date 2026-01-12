@@ -126,7 +126,7 @@ class TestCustomerPurchaseFlow:
         # Step 1: Customer browses products
         all_products = services['catalog'].list_products()
         assert len(all_products) == 5
-        assert product in all_products
+        assert any(p.id == product.id for p in all_products)
 
         # Step 2: Customer views product details
         product_details = services['catalog'].get_product(product.id)
