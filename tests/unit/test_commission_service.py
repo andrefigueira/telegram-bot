@@ -325,6 +325,21 @@ class TestCommissionService:
 
     # ==================== EDGE CASE TESTS ====================
 
+    def test_generate_invoice_zero_commission(self, commission_service, db):
+        """Test invoice not generated when commission is zero."""
+        tenant = db.create_tenant("zero@test.com", "hash", "1.0")
+        db.update_tenant(tenant.id, bot_active=True, commission_rate=Decimal("0"))
+
+        product = db.create_product(tenant.id, "Test", Decimal("10.0"), 100)
+        order = db.create_order(
+            tenant.id, product.id, 12345, 1, Decimal("10.0"),
+            Decimal("0"), "xmr", Decimal("10.0"), "addr", "enc"
+        )
+        db.update_order_state(order.id, tenant.id, OrderState.PAID, datetime.utcnow())
+
+        invoices = commission_service.generate_weekly_invoices()
+        # No invoice should be generated when commission is 0
+        assert len(invoices) == 0
 
     def test_check_payment_nonexistent_invoice(self, commission_service):
         """Test check_payment with non-existent invoice."""

@@ -1,6 +1,7 @@
 """Application configuration module."""
 
-from pydantic import BaseSettings, Field, validator
+from pydantic_settings import BaseSettings
+from pydantic import Field, field_validator
 from typing import List
 import base64
 
@@ -44,7 +45,8 @@ class Settings(BaseSettings):
     health_check_enabled: bool = Field(True, env="HEALTH_CHECK_ENABLED")
     health_check_port: int = Field(8080, env="HEALTH_CHECK_PORT")
 
-    @validator("encryption_key")
+    @field_validator("encryption_key")
+    @classmethod
     def validate_encryption_key(cls, v):
         if not v:
             return v

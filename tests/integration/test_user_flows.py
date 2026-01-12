@@ -275,41 +275,46 @@ class TestProductManagementFlow:
 
         vendor = vendors.get_by_telegram_id(user_id)
 
-        # Step 1: Start adding product (patch _is_admin to allow test user)
-        mock_update.callback_query.data = "admin:add_product"
-        with patch('bot.handlers.admin._is_admin', return_value=True):
-            await handle_admin_callback(mock_update, mock_context, vendors=vendors, catalog=catalog)
-        assert mock_context.user_data['awaiting_input'] == 'product_name'
+        # Mock currency conversion to avoid network calls
+        async def mock_fetch_rates():
+            return {"USD": Decimal("150.00"), "GBP": Decimal("120.00"), "EUR": Decimal("140.00")}
 
-        # Step 2: Enter product name
-        mock_message_update.message.text = "Test Widget"
-        await handle_admin_text_input(mock_message_update, mock_context, vendors=vendors, catalog=catalog)
-        assert mock_context.user_data['awaiting_input'] == 'product_price'
-        assert mock_context.user_data['new_product']['name'] == "Test Widget"
+        with patch('bot.services.currency.fetch_xmr_rates', mock_fetch_rates):
+            # Step 1: Start adding product (patch _is_admin to allow test user)
+            mock_update.callback_query.data = "admin:add_product"
+            with patch('bot.handlers.admin._is_admin', return_value=True):
+                await handle_admin_callback(mock_update, mock_context, vendors=vendors, catalog=catalog)
+            assert mock_context.user_data['awaiting_input'] == 'product_name'
 
-        # Step 3: Enter price
-        mock_message_update.message.text = "25.99"
-        await handle_admin_text_input(mock_message_update, mock_context, vendors=vendors, catalog=catalog)
-        assert mock_context.user_data['awaiting_input'] == 'product_stock'
+            # Step 2: Enter product name
+            mock_message_update.message.text = "Test Widget"
+            await handle_admin_text_input(mock_message_update, mock_context, vendors=vendors, catalog=catalog)
+            assert mock_context.user_data['awaiting_input'] == 'product_price'
+            assert mock_context.user_data['new_product']['name'] == "Test Widget"
 
-        # Step 4: Enter stock
-        mock_message_update.message.text = "100"
-        await handle_admin_text_input(mock_message_update, mock_context, vendors=vendors, catalog=catalog)
-        assert mock_context.user_data['awaiting_input'] == 'product_desc'
+            # Step 3: Enter price
+            mock_message_update.message.text = "25.99"
+            await handle_admin_text_input(mock_message_update, mock_context, vendors=vendors, catalog=catalog)
+            assert mock_context.user_data['awaiting_input'] == 'product_stock'
 
-        # Step 5: Enter description
-        mock_message_update.message.text = "A fantastic test widget"
-        await handle_admin_text_input(mock_message_update, mock_context, vendors=vendors, catalog=catalog)
+            # Step 4: Enter stock
+            mock_message_update.message.text = "100"
+            await handle_admin_text_input(mock_message_update, mock_context, vendors=vendors, catalog=catalog)
+            assert mock_context.user_data['awaiting_input'] == 'product_desc'
 
-        # Verify product was created in database
-        products = catalog.list_products_by_vendor(vendor.id)
-        assert len(products) == 1
-        product = products[0]
-        assert product.name == "Test Widget"
-        assert product.price_fiat == Decimal("25.99")  # Handler stores fiat price and converts to XMR
-        assert product.price_xmr > 0  # XMR price is auto-calculated from fiat
-        assert product.inventory == 100
-        assert product.description == "A fantastic test widget"
+            # Step 5: Enter description
+            mock_message_update.message.text = "A fantastic test widget"
+            await handle_admin_text_input(mock_message_update, mock_context, vendors=vendors, catalog=catalog)
+
+            # Verify product was created in database
+            products = catalog.list_products_by_vendor(vendor.id)
+            assert len(products) == 1
+            product = products[0]
+            assert product.name == "Test Widget"
+            assert product.price_fiat == Decimal("25.99")  # Handler stores fiat price and converts to XMR
+            assert product.price_xmr > 0  # XMR price is auto-calculated from fiat
+            assert product.inventory == 100
+            assert product.description == "A fantastic test widget"
 
     @pytest.mark.asyncio
     async def test_edit_product_flow(self, db, vendors, catalog, mock_update, mock_message_update, mock_context):

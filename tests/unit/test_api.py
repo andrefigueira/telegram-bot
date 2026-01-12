@@ -265,3 +265,101 @@ class TestPlatform:
             assert platform._running is False
         finally:
             os.unlink(path)
+
+    @pytest.mark.asyncio
+    async def test_platform_double_start(self):
+        """Test calling start twice logs warning."""
+        from bot.main_multitenant import DarkPoolPlatform
+        import tempfile
+        import os
+
+        fd, path = tempfile.mkstemp(suffix='.db')
+        os.close(fd)
+
+        try:
+            platform = DarkPoolPlatform(
+                database_url=f"sqlite:///{path}",
+                testnet=True
+            )
+
+            platform.initialize()
+
+            # Start platform first time
+            await platform.start()
+            assert platform._running is True
+
+            # Start platform second time (should just warn and return)
+            await platform.start()
+            assert platform._running is True
+
+            # Stop platform
+            await platform.stop()
+        finally:
+            os.unlink(path)
+
+    @pytest.mark.asyncio
+    async def test_platform_stop_when_not_running(self):
+        """Test stopping platform when not running does nothing."""
+        from bot.main_multitenant import DarkPoolPlatform
+        import tempfile
+        import os
+
+        fd, path = tempfile.mkstemp(suffix='.db')
+        os.close(fd)
+
+        try:
+            platform = DarkPoolPlatform(
+                database_url=f"sqlite:///{path}",
+                testnet=True
+            )
+
+            platform.initialize()
+
+            # Stop without starting (should just return)
+            await platform.stop()
+            assert platform._running is False
+        finally:
+            os.unlink(path)
+
+    def test_get_platform_not_initialized(self):
+        """Test get_platform raises error when not initialized."""
+        import bot.main_multitenant as module
+
+        # Save current state
+        old_platform = module._platform
+        module._platform = None
+
+        try:
+            with pytest.raises(RuntimeError, match="Platform not initialized"):
+                module.get_platform()
+        finally:
+            # Restore state
+            module._platform = old_platform
+
+    def test_create_platform_with_env_vars(self):
+        """Test create_platform reads from environment variables."""
+        from bot.main_multitenant import create_platform
+        import bot.main_multitenant as module
+        import tempfile
+        import os
+
+        fd, path = tempfile.mkstemp(suffix='.db')
+        os.close(fd)
+
+        # Save current state
+        old_platform = module._platform
+        module._platform = None
+
+        try:
+            with patch.dict(os.environ, {
+                'DATABASE_URL': f"sqlite:///{path}",
+                'PLATFORM_XMR_ADDRESS': '4TestAddress',
+                'TESTNET': 'true',
+            }):
+                platform = create_platform()
+                assert platform is not None
+                assert platform.testnet is True
+                assert platform.platform_xmr_address == '4TestAddress'
+        finally:
+            module._platform = old_platform
+            os.unlink(path)

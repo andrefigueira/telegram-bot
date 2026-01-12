@@ -433,8 +433,11 @@ class TestFiatToXMRSync:
         currency_module._display_cache = {}
         currency_module._display_cache_time = None
 
-        result = fiat_to_xmr_sync(Decimal("100.00"), "USD")
-        assert isinstance(result, Decimal)
+        # Mock fetch_xmr_rates to avoid network call
+        with patch('bot.services.currency.fetch_xmr_rates', new_callable=AsyncMock) as mock:
+            mock.return_value = {"USD": Decimal("150.00"), "GBP": Decimal("120.00"), "EUR": Decimal("140.00")}
+            result = fiat_to_xmr_sync(Decimal("100.00"), "USD")
+            assert isinstance(result, Decimal)
 
     def test_fiat_to_xmr_sync_running_loop_xmr(self):
         """Test sync conversion with running event loop for XMR currency."""
