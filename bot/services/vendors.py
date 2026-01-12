@@ -24,17 +24,30 @@ class VendorService:
             session.refresh(vendor)
             return vendor
 
+    def _load_vendor_attrs(self, vendor: Vendor) -> None:
+        """Ensure all vendor attributes are loaded before session closes."""
+        if vendor:
+            _ = vendor.id, vendor.telegram_id, vendor.name, vendor.commission_rate
+            _ = vendor.pricing_currency, vendor.shop_name, vendor.wallet_address, vendor.accepted_payments
+
     def list_vendors(self) -> List[Vendor]:
         with self.db.session() as session:
-            return list(session.exec(select(Vendor)))
+            vendors = list(session.exec(select(Vendor)))
+            for v in vendors:
+                self._load_vendor_attrs(v)
+            return vendors
 
     def get_by_telegram_id(self, tg_id: int) -> Vendor | None:
         with self.db.session() as session:
-            return session.exec(select(Vendor).where(Vendor.telegram_id == tg_id)).first()
+            vendor = session.exec(select(Vendor).where(Vendor.telegram_id == tg_id)).first()
+            self._load_vendor_attrs(vendor)
+            return vendor
 
     def get_vendor(self, vendor_id: int) -> Vendor | None:
         with self.db.session() as session:
-            return session.get(Vendor, vendor_id)
+            vendor = session.get(Vendor, vendor_id)
+            self._load_vendor_attrs(vendor)
+            return vendor
 
     def set_commission(self, vendor_id: int, rate: float) -> Vendor:
         with self.db.session() as session:

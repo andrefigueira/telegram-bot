@@ -7,7 +7,7 @@ from telegram.ext import ContextTypes
 
 from ..services.catalog import CatalogService
 from ..services.orders import OrderService
-from ..error_handler import handle_errors
+from ..error_handler import handle_errors, handle_callback_errors
 from ..keyboards import (
     main_menu_keyboard,
     help_keyboard,
@@ -221,6 +221,7 @@ async def order_status(update: Update, context: ContextTypes.DEFAULT_TYPE, order
 
 # Callback query handlers for button interactions
 
+@handle_callback_errors
 async def handle_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, catalog: CatalogService = None) -> None:
     """Handle main menu button callbacks."""
     query = update.callback_query
@@ -287,6 +288,7 @@ async def handle_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         )
 
 
+@handle_callback_errors
 async def handle_setup_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, vendors: VendorService = None, postage: PostageService = None) -> None:
     """Handle setup menu button callbacks."""
     query = update.callback_query
@@ -413,6 +415,7 @@ async def handle_setup_callback(update: Update, context: ContextTypes.DEFAULT_TY
         )
 
 
+@handle_callback_errors
 async def handle_payment_toggle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, vendors: VendorService = None) -> None:
     """Handle payment method toggle callbacks."""
     query = update.callback_query
@@ -474,6 +477,7 @@ async def handle_payment_toggle_callback(update: Update, context: ContextTypes.D
         )
 
 
+@handle_callback_errors
 async def handle_currency_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, vendors: VendorService = None) -> None:
     """Handle currency selection callbacks."""
     query = update.callback_query
@@ -513,6 +517,7 @@ async def handle_currency_callback(update: Update, context: ContextTypes.DEFAULT
         )
 
 
+@handle_callback_errors
 async def handle_postage_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, vendors: VendorService = None, postage: PostageService = None) -> None:
     """Handle postage management callbacks."""
     query = update.callback_query
@@ -622,6 +627,7 @@ async def handle_postage_callback(update: Update, context: ContextTypes.DEFAULT_
         )
 
 
+@handle_callback_errors
 async def handle_products_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, catalog: CatalogService = None) -> None:
     """Handle product browsing callbacks."""
     query = update.callback_query
@@ -645,6 +651,7 @@ async def handle_products_callback(update: Update, context: ContextTypes.DEFAULT
         )
 
 
+@handle_callback_errors
 async def handle_product_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, catalog: CatalogService = None) -> None:
     """Handle single product view callbacks."""
     query = update.callback_query
@@ -684,6 +691,7 @@ async def handle_product_callback(update: Update, context: ContextTypes.DEFAULT_
             )
 
 
+@handle_callback_errors
 async def handle_order_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, orders: OrderService = None, catalog: CatalogService = None, postage: PostageService = None, vendors: VendorService = None) -> None:
     """Handle order-related callbacks."""
     query = update.callback_query
@@ -872,6 +880,7 @@ async def handle_order_callback(update: Update, context: ContextTypes.DEFAULT_TY
             )
 
 
+@handle_errors
 async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE, orders: OrderService = None, catalog: CatalogService = None, vendors: VendorService = None, postage: PostageService = None) -> None:
     """Handle text input for setup flows."""
     awaiting = context.user_data.get('awaiting_input')

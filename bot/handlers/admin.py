@@ -10,7 +10,7 @@ from ..services.catalog import CatalogService
 from ..services.vendors import VendorService
 from ..models import Product, Vendor
 from ..config import get_settings
-from ..error_handler import handle_errors
+from ..error_handler import handle_errors, handle_callback_errors
 from ..keyboards import (
     admin_menu_keyboard,
     vendor_products_keyboard,
@@ -181,6 +181,7 @@ async def set_commission(
 
 # Callback handlers for admin/vendor actions
 
+@handle_callback_errors
 async def handle_admin_callback(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -294,6 +295,7 @@ async def handle_admin_callback(
         )
 
 
+@handle_callback_errors
 async def handle_vendor_callback(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -409,6 +411,7 @@ async def handle_vendor_callback(
         )
 
 
+@handle_errors
 async def handle_admin_text_input(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -698,6 +701,7 @@ async def super_admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 # Super admin callback handler
+@handle_callback_errors
 async def handle_super_admin_callback(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -820,6 +824,7 @@ async def handle_super_admin_callback(
 
 
 # Vendor order management callback handler
+@handle_callback_errors
 async def handle_vendor_order_callback(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,

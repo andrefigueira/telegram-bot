@@ -137,10 +137,20 @@ class OrderService:
                         payout_service.create_payout(order.id, order.vendor_id, vendor_share)  # pragma: no cover
             return order
 
+    def _load_order_attrs(self, order: Order) -> None:
+        """Ensure all order attributes are loaded before session closes."""
+        if order:
+            _ = order.id, order.product_id, order.vendor_id, order.quantity
+            _ = order.payment_id, order.address_encrypted, order.commission_xmr
+            _ = order.state, order.postage_type_id, order.postage_xmr
+            _ = order.shipped_at, order.shipping_note, order.created_at
+
     def get_order(self, order_id: int) -> Order | None:
         """Retrieve a single order."""
         with self.db.session() as session:
-            return session.get(Order, order_id)
+            order = session.get(Order, order_id)
+            self._load_order_attrs(order)
+            return order
 
     def get_payment_info(self, order_id: int, coin: str = "XMR") -> dict:
         """Get payment info for an order."""
@@ -200,7 +210,10 @@ class OrderService:
 
     def list_orders(self) -> List[Order]:
         with self.db.session() as session:
-            return list(session.exec(select(Order)))
+            orders = list(session.exec(select(Order)))
+            for order in orders:
+                self._load_order_attrs(order)
+            return orders
 
     def get_address(self, order: Order) -> str:
         return decrypt(order.address_encrypted, self.settings.encryption_key)
@@ -218,7 +231,10 @@ class OrderService:
         """List all orders for a specific vendor."""
         with self.db.session() as session:
             stmt = select(Order).where(Order.vendor_id == vendor_id).order_by(Order.created_at.desc())
-            return list(session.exec(stmt))
+            orders = list(session.exec(stmt))
+            for order in orders:
+                self._load_order_attrs(order)
+            return orders
 
     def mark_shipped(self, order_id: int, shipping_note: str = None) -> Order:
         """Mark an order as shipped with optional note."""

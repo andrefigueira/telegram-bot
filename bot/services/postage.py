@@ -41,7 +41,11 @@ class PostageService:
     def get_postage_type(self, postage_id: int) -> Optional[PostageType]:
         """Get a postage type by ID."""
         with self.db.session() as session:
-            return session.get(PostageType, postage_id)
+            pt = session.get(PostageType, postage_id)
+            if pt:
+                # Ensure all attributes are loaded before session closes
+                _ = pt.id, pt.vendor_id, pt.name, pt.description, pt.price_fiat, pt.currency, pt.is_active
+            return pt
 
     def list_by_vendor(self, vendor_id: int, active_only: bool = False) -> List[PostageType]:
         """List all postage types for a vendor."""
@@ -49,7 +53,11 @@ class PostageService:
             stmt = select(PostageType).where(PostageType.vendor_id == vendor_id)
             if active_only:
                 stmt = stmt.where(PostageType.is_active == True)
-            return list(session.exec(stmt))
+            postage_types = list(session.exec(stmt))
+            # Ensure all attributes are loaded before session closes
+            for pt in postage_types:
+                _ = pt.id, pt.vendor_id, pt.name, pt.description, pt.price_fiat, pt.currency, pt.is_active
+            return postage_types
 
     def update_postage_type(self, postage_id: int, **kwargs) -> Optional[PostageType]:
         """Update a postage type."""
