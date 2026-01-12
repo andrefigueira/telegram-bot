@@ -58,12 +58,20 @@ class CatalogService:
 
     def list_products(self) -> List[Product]:
         with self.db.session() as session:
-            return list(session.exec(select(Product)))
+            products = list(session.exec(select(Product)))
+            # Ensure all attributes are loaded before session closes
+            for p in products:
+                _ = p.id, p.name, p.description, p.price_xmr, p.price_fiat, p.currency, p.inventory, p.vendor_id
+            return products
 
     def list_products_by_vendor(self, vendor_id: int) -> List[Product]:
         """List products belonging to a vendor."""
         with self.db.session() as session:
-            return list(session.exec(select(Product).where(Product.vendor_id == vendor_id)))
+            products = list(session.exec(select(Product).where(Product.vendor_id == vendor_id)))
+            # Ensure all attributes are loaded before session closes
+            for p in products:
+                _ = p.id, p.name, p.description, p.price_xmr, p.price_fiat, p.currency, p.inventory, p.vendor_id
+            return products
 
     def search(self, query: str) -> List[Product]:
         """Search products by name, description or category."""
@@ -74,4 +82,8 @@ class CatalogService:
             (Product.category.ilike(like))
         )
         with self.db.session() as session:
-            return list(session.exec(stmt))
+            products = list(session.exec(stmt))
+            # Ensure all attributes are loaded before session closes
+            for p in products:
+                _ = p.id, p.name, p.description, p.price_xmr, p.price_fiat, p.currency, p.inventory, p.vendor_id
+            return products

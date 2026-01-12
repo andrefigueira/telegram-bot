@@ -64,6 +64,29 @@ def handle_errors(func: Callable) -> Callable:
     return wrapper
 
 
+def handle_callback_errors(func: Callable) -> Callable:
+    """Decorator to handle errors in callback query handlers."""
+    @wraps(func)
+    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, *args: Any, **kwargs: Any) -> Any:
+        try:
+            return await func(update, context, *args, **kwargs)
+        except Exception as e:
+            logger.error(f"Error in {func.__name__}: {e}", exc_info=True)
+            query = update.callback_query
+            if query:
+                try:
+                    await query.answer("An error occurred. Please try again.", show_alert=True)
+                except Exception:
+                    pass
+                try:
+                    await query.edit_message_text(
+                        "An error occurred. Please try again or use /start to return to the menu."
+                    )
+                except Exception:
+                    pass
+    return wrapper
+
+
 class RetryableError(Exception):
     """Error that should trigger a retry."""
     pass
