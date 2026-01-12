@@ -297,9 +297,11 @@ class TestProductManagementFlow:
         await handle_admin_text_input(mock_message_update, mock_context, vendors=vendors, catalog=catalog)
         assert mock_context.user_data['awaiting_input'] == 'product_desc'
 
-        # Step 5: Enter description
+        # Step 5: Enter description (mock fiat_to_xmr_accurate to avoid external API call)
         mock_message_update.message.text = "A fantastic test widget"
-        await handle_admin_text_input(mock_message_update, mock_context, vendors=vendors, catalog=catalog)
+        with patch('bot.handlers.admin.fiat_to_xmr_accurate', new_callable=AsyncMock) as mock_convert:
+            mock_convert.return_value = Decimal("0.17326666")  # ~25.99 USD at 150 XMR rate
+            await handle_admin_text_input(mock_message_update, mock_context, vendors=vendors, catalog=catalog)
 
         # Verify product was created in database
         products = catalog.list_products_by_vendor(vendor.id)

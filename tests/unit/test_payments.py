@@ -3,9 +3,21 @@
 import pytest
 from unittest.mock import MagicMock, patch
 from decimal import Decimal
+import sys
 
 from bot.services.payments import MoneroPaymentService, PaymentService
 from bot.error_handler import RetryableError
+
+# Check if monero module is available
+monero_available = "monero" in sys.modules or any(
+    spec is not None for spec in [__import__('importlib.util').util.find_spec('monero')]
+    if spec is not None
+)
+try:
+    import monero
+    monero_available = True
+except ImportError:
+    monero_available = False
 
 
 class TestMoneroPaymentService:
@@ -200,6 +212,7 @@ class TestMoneroPaymentService:
 
             assert balance == Decimal("0")
 
+    @pytest.mark.skipif(not monero_available, reason="monero module not installed")
     def test_get_wallet_caching(self, mock_settings):
         """Test wallet connection caching."""
         with patch('bot.services.payments.get_settings') as settings_mock:
@@ -229,6 +242,7 @@ class TestMoneroPaymentService:
 
         assert wallet is None
 
+    @pytest.mark.skipif(not monero_available, reason="monero module not installed")
     def test_get_wallet_connection_failure(self, mock_settings):
         """Test _get_wallet raises RetryableError on connection failure."""
         with patch('monero.backends.jsonrpc.JSONRPCWallet') as mock_backend_class:
