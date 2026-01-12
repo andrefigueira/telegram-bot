@@ -141,6 +141,14 @@ class TestHealthEndpoints:
         data = response.json()
         assert data["status"] == "ready"
 
+    def test_ready_check_exception(self, client, mock_platform):
+        """Test ready endpoint when platform raises exception."""
+        test_client, _ = client
+        mock_platform.bot_manager.health_check = AsyncMock(side_effect=Exception("Service unavailable"))
+        response = test_client.get("/ready")
+        assert response.status_code == 503
+        assert "Service unavailable" in response.json()["detail"]
+
 
 class TestAuthEndpoints:
     """Test authentication endpoints."""

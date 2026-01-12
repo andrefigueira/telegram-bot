@@ -149,6 +149,40 @@ class TestErrorHandler:
         """Test retry_on_error when max retries exceeded."""
         async def test_func():
             raise RetryableError("Always fails")
-        
+
         with pytest.raises(RetryableError):
             await retry_on_error(test_func, max_retries=2, delay=0)
+
+    @pytest.mark.asyncio
+    async def test_error_handler_benign_message_not_modified(self):
+        """Test error handler ignores 'Message is not modified' error."""
+        from telegram.error import BadRequest
+
+        update = MagicMock(spec=Update)
+        context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
+        context.error = BadRequest("Message is not modified")
+
+        # Should not raise exception and not try to reply
+        await error_handler(update, context)
+
+    @pytest.mark.asyncio
+    async def test_error_handler_benign_query_too_old(self):
+        """Test error handler ignores 'Query is too old' error."""
+        from telegram.error import BadRequest
+
+        update = MagicMock(spec=Update)
+        context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
+        context.error = BadRequest("Query is too old and response timeout expired")
+
+        await error_handler(update, context)
+
+    @pytest.mark.asyncio
+    async def test_error_handler_benign_message_to_edit_not_found(self):
+        """Test error handler ignores 'message to edit not found' error."""
+        from telegram.error import BadRequest
+
+        update = MagicMock(spec=Update)
+        context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
+        context.error = BadRequest("message to edit not found")
+
+        await error_handler(update, context)

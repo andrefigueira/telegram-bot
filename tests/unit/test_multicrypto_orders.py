@@ -410,3 +410,159 @@ class TestMultiCryptoOrderService:
 
         paid = order_service.get_orders(tenant.id, state=OrderState.PAID)
         assert len(paid) == 1
+
+    @pytest.mark.asyncio
+    async def test_create_order_swap_failure(self, order_service, db, tenant_with_product):
+        """Test creating order when swap creation fails."""
+        tenant, product = tenant_with_product
+
+        # Mock swap service to return None
+        with patch.object(
+            order_service.swap_service, 'create_swap',
+            new_callable=AsyncMock, return_value=None
+        ):
+            with pytest.raises(ValueError, match="Unable to create swap"):
+                await order_service.create_order(
+                    tenant.id, product.id, 12345, 1, "Address", "btc"
+                )
+
+    @pytest.mark.asyncio
+    async def test_create_order_inventory_decrement_fails(self, order_service, db, tenant_with_product):
+        """Test creating order when inventory decrement fails."""
+        tenant, product = tenant_with_product
+
+        # Mock db to fail inventory decrement
+        with patch.object(db, 'decrement_inventory', return_value=False):
+            with pytest.raises(ValueError, match="Failed to reserve inventory"):
+                await order_service.create_order(
+                    tenant.id, product.id, 12345, 1, "Address", "xmr"
+                )
+
+    @pytest.mark.asyncio
+    async def test_check_order_payment_swap_failed(self, order_service, db, tenant_with_product):
+        """Test checking payment status when swap failed."""
+        tenant, product = tenant_with_product
+
+        result = await order_service.create_order(
+            tenant.id, product.id, 12345, 1, "Address", "btc"
+        )
+
+        # Mock swap service to return failed status
+        with patch.object(
+            order_service.swap_service, 'check_swap_status',
+            new_callable=AsyncMock, return_value=SwapStatus.FAILED
+        ):
+            status = await order_service.check_order_payment(
+                result["order_id"], tenant.id
+            )
+
+            assert status["swap_status"] == "failed"
+            assert status["state"] == "cancelled"
+            assert "failed" in status["message"].lower()
+
+    @pytest.mark.asyncio
+    async def test_check_order_payment_swap_expired(self, order_service, db, tenant_with_product):
+        """Test checking payment status when swap expired."""
+        tenant, product = tenant_with_product
+
+        result = await order_service.create_order(
+            tenant.id, product.id, 12345, 1, "Address", "btc"
+        )
+
+        with patch.object(
+            order_service.swap_service, 'check_swap_status',
+            new_callable=AsyncMock, return_value=SwapStatus.EXPIRED
+        ):
+            status = await order_service.check_order_payment(
+                result["order_id"], tenant.id
+            )
+
+            assert status["swap_status"] == "expired"
+            assert status["state"] == "cancelled"
+
+    @pytest.mark.asyncio
+    async def test_check_order_payment_swap_waiting(self, order_service, db, tenant_with_product):
+        """Test checking payment status when swap is waiting."""
+        tenant, product = tenant_with_product
+
+        result = await order_service.create_order(
+            tenant.id, product.id, 12345, 1, "Address", "btc"
+        )
+
+        with patch.object(
+            order_service.swap_service, 'check_swap_status',
+            new_callable=AsyncMock, return_value=SwapStatus.WAITING
+        ):
+            status = await order_service.check_order_payment(
+                result["order_id"], tenant.id
+            )
+
+            assert status["swap_status"] == "waiting"
+            assert "in progress" in status["message"].lower()
+
+    @pytest.mark.asyncio
+    async def test_process_pending_swaps_with_failures(self, order_service, db, tenant_with_product):
+        """Test processing pending swaps with failed swaps."""
+        tenant, product = tenant_with_product
+
+        # Create a swap order
+        await order_service.create_order(
+            tenant.id, product.id, 12345, 1, "Address 1", "btc"
+        )
+
+        # Mock swap service to return failed status
+        with patch.object(
+            order_service.swap_service, 'check_swap_status',
+            new_callable=AsyncMock, return_value=SwapStatus.FAILED
+        ):
+            results = await order_service.process_pending_swaps()
+
+            assert results["checked"] == 1
+            assert results["failed"] == 1
+
+    @pytest.mark.asyncio
+    async def test_process_pending_swaps_with_exception(self, order_service, db, tenant_with_product):
+        """Test processing pending swaps handles exceptions gracefully."""
+        tenant, product = tenant_with_product
+
+        await order_service.create_order(
+            tenant.id, product.id, 12345, 1, "Address 1", "btc"
+        )
+
+        with patch.object(
+            order_service.swap_service, 'check_swap_status',
+            new_callable=AsyncMock, side_effect=Exception("Network error")
+        ):
+            results = await order_service.process_pending_swaps()
+
+            assert results["checked"] == 1
+            # Error was caught, no completed or failed count increased
+            assert results["completed"] == 0
+            assert results["failed"] == 0
+
+    @pytest.mark.asyncio
+    async def test_get_order_returns_order(self, order_service, db, tenant_with_product):
+        """Test get_order returns the order."""
+        tenant, product = tenant_with_product
+
+        result = await order_service.create_order(
+            tenant.id, product.id, 12345, 1, "Address", "xmr"
+        )
+
+        order = order_service.get_order(result["order_id"], tenant.id)
+        assert order is not None
+        assert order.id == result["order_id"]
+
+    def test_cancel_nonexistent_order(self, order_service, tenant_with_product):
+        """Test cancelling non-existent order returns None."""
+        tenant, _ = tenant_with_product
+
+        result = order_service.cancel_order(99999, tenant.id)
+        assert result is None
+
+    def test_mark_fulfilled_nonexistent_order(self, order_service, tenant_with_product):
+        """Test marking non-existent order as fulfilled returns None."""
+        tenant, _ = tenant_with_product
+
+        result = order_service.mark_order_fulfilled(99999, tenant.id)
+        assert result is None
