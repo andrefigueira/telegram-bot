@@ -1281,6 +1281,26 @@ class TestAdditionalTextInput:
         assert mock_context.user_data['awaiting_input'] is None
 
     @pytest.mark.asyncio
+    async def test_text_input_shopname_special_chars(self, mock_update, mock_context):
+        """Test shop name with Markdown special characters doesn't crash."""
+        mock_context.user_data['awaiting_input'] = 'shopname'
+        # This name contains underscores and asterisks which would break Markdown
+        mock_update.message.text = "My_Cool*Shop_Name"
+
+        mock_vendor = MagicMock(spec=Vendor)
+        mock_vendor.id = 1
+        mock_vendors = MagicMock(spec=VendorService)
+        mock_vendors.get_by_telegram_id.return_value = mock_vendor
+
+        # Should not raise an error
+        await handle_text_input(mock_update, mock_context, vendors=mock_vendors)
+
+        mock_vendors.update_settings.assert_called_once_with(1, shop_name="My_Cool*Shop_Name")
+        assert mock_context.user_data['awaiting_input'] is None
+        # Verify the reply was called (escaped version should be in the call)
+        mock_update.message.reply_text.assert_called_once()
+
+    @pytest.mark.asyncio
     async def test_text_input_wallet_save(self, mock_update, mock_context):
         """Test wallet address saves to database."""
         mock_context.user_data['awaiting_input'] = 'wallet'

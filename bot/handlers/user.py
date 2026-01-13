@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from telegram import Update
 from telegram.ext import ContextTypes
+from telegram.helpers import escape_markdown
 
 from ..services.catalog import CatalogService
 from ..services.orders import OrderService
@@ -403,10 +404,12 @@ async def handle_setup_callback(update: Update, context: ContextTypes.DEFAULT_TY
 
         payments_str = ", ".join(payments)
         wallet_display = f"`{wallet[:20]}...`" if wallet != "Not set" and len(wallet) > 20 else wallet
+        # Escape shop name to prevent Markdown parsing errors
+        shop_name_display = escape_markdown(shop_name, version=1)
         await query.edit_message_text(
             f"*Your Settings*\n\n"
             f"*Vendor:* {vendor_status}\n"
-            f"*Shop Name:* {shop_name}\n"
+            f"*Shop Name:* {shop_name_display}\n"
             f"*Pricing Currency:* {pricing_currency}\n"
             f"*Wallet:* {wallet_display}\n"
             f"*Payment Methods:* {payments_str}",
@@ -898,8 +901,10 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         if vendor and vendors:
             vendors.update_settings(vendor.id, shop_name=text)
         context.user_data['awaiting_input'] = None
+        # Escape user input to prevent Markdown parsing errors
+        escaped_name = escape_markdown(text, version=1)
         await update.message.reply_text(
-            f"*Shop name set to:* {text}",
+            f"*Shop name set to:* {escaped_name}",
             parse_mode='Markdown',
             reply_markup=setup_keyboard(is_vendor)
         )
