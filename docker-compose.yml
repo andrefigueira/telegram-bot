@@ -12,6 +12,8 @@ services:
       - DATABASE_URL=mysql+pymysql://${MYSQL_USER:-bot}:${MYSQL_PASSWORD:-botpassword}@mysql:3306/${MYSQL_DATABASE:-telegram_bot}
       - LOG_FILE=/app/logs/bot.log
       - MONERO_RPC_URL=http://monero-wallet:18083
+      - MONERO_RPC_USER=${MONERO_RPC_USER:-monero}
+      - MONERO_RPC_PASSWORD=${MONERO_RPC_PASSWORD:-rpcpassword}
     volumes:
       - ./logs:/app/logs
     ports:
@@ -65,11 +67,11 @@ services:
     image: sethsimmons/simple-monero-wallet-rpc:latest
     container_name: monero-wallet
     volumes:
-      - ./monero-wallet:/wallet
+      - monero-wallet-data:/home/monero/wallet
     environment:
       - DAEMON_HOST=node.moneroworld.com
       - DAEMON_PORT=18089
-      - WALLET_FILE=/wallet/bot-wallet
+      - WALLET_FILE=bot-wallet
       - WALLET_PASSWORD=${MONERO_WALLET_PASSWORD:-changeme}
       - CONFIRM_EXTERNAL_BIND=1
       - RPC_LOGIN=${MONERO_RPC_USER:-monero}:${MONERO_RPC_PASSWORD:-rpcpassword}
@@ -96,3 +98,4 @@ networks:
 
 volumes:
   mysql-data:
+  monero-wallet-data:

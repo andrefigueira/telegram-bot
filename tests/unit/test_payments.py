@@ -202,38 +202,51 @@ class TestMoneroPaymentService:
 
     def test_get_wallet_caching(self, mock_settings):
         """Test wallet connection caching."""
-        import sys
+        with patch('bot.services.payments.get_settings') as settings_mock:
+            settings_mock.return_value = mock_settings
 
-        # Create mock monero modules
-        mock_wallet_module = MagicMock()
-        mock_backend_module = MagicMock()
-        mock_wallet_class = MagicMock()
-        mock_backend_class = MagicMock()
+            service = MoneroPaymentService()
 
-        mock_wallet_module.Wallet = mock_wallet_class
-        mock_backend_module.JSONRPCWallet = mock_backend_class
+            with patch('monero.wallet.Wallet') as mock_wallet_class:
+                with patch('monero.backends.jsonrpc.JSONRPCWallet') as mock_backend_class:
+                    mock_wallet = MagicMock()
+                    mock_wallet_class.return_value = mock_wallet
 
-        with patch.dict(sys.modules, {
-            'monero': MagicMock(),
-            'monero.wallet': mock_wallet_module,
-            'monero.backends': MagicMock(),
-            'monero.backends.jsonrpc': mock_backend_module,
-        }):
-            with patch('bot.services.payments.get_settings') as settings_mock:
-                settings_mock.return_value = mock_settings
+                    # First call
+                    wallet1 = service._get_wallet()
+                    # Second call should return cached instance
+                    wallet2 = service._get_wallet()
 
-                service = MoneroPaymentService()
+                    assert wallet1 is wallet2
+                    mock_backend_class.assert_called_once_with(
+                        host="localhost",
+                        port=18082,
+                        user="user",
+                        password="pass",
+                    )
 
-                mock_wallet = MagicMock()
-                mock_wallet_class.return_value = mock_wallet
+    def test_get_wallet_parses_host_without_scheme(self, mock_settings):
+        """Test _get_wallet parses host without scheme."""
+        mock_settings.monero_rpc_url = "localhost:18083"
 
-                # First call
-                wallet1 = service._get_wallet()
-                # Second call should return cached instance
-                wallet2 = service._get_wallet()
+        with patch('bot.services.payments.get_settings') as settings_mock:
+            settings_mock.return_value = mock_settings
 
-                assert wallet1 is wallet2
-                mock_backend_class.assert_called_once()  # Backend only created once
+            service = MoneroPaymentService()
+
+            with patch('monero.wallet.Wallet') as mock_wallet_class:
+                with patch('monero.backends.jsonrpc.JSONRPCWallet') as mock_backend_class:
+                    mock_wallet = MagicMock()
+                    mock_wallet_class.return_value = mock_wallet
+
+                    service._get_wallet()
+
+                    mock_backend_class.assert_called_once_with(
+                        host="localhost",
+                        port=18083,
+                        user="user",
+                        password="pass",
+                    )
 
     def test_get_wallet_no_rpc_url(self, mock_settings):
         """Test _get_wallet returns None when no RPC URL."""
@@ -246,19 +259,9 @@ class TestMoneroPaymentService:
 
     def test_get_wallet_connection_failure(self, mock_settings):
         """Test _get_wallet raises RetryableError on connection failure."""
-        import sys
+        with patch('monero.backends.jsonrpc.JSONRPCWallet') as mock_backend_class:
+            mock_backend_class.side_effect = Exception("Connection refused")
 
-        # Create mock monero modules with backend that raises
-        mock_wallet_module = MagicMock()
-        mock_backend_module = MagicMock()
-        mock_backend_module.JSONRPCWallet.side_effect = Exception("Connection refused")
-
-        with patch.dict(sys.modules, {
-            'monero': MagicMock(),
-            'monero.wallet': mock_wallet_module,
-            'monero.backends': MagicMock(),
-            'monero.backends.jsonrpc': mock_backend_module,
-        }):
             service = MoneroPaymentService()
 
             with pytest.raises(RetryableError, match="Monero wallet connection failed"):

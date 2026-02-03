@@ -807,10 +807,13 @@ async def handle_order_callback(update: Update, context: ContextTypes.DEFAULT_TY
         # Get payment details from order service
         try:
             payment_info = orders.get_payment_info(order_id, coin)
+            payment_id = payment_info.get("payment_id")
+            payment_id_line = f"*Payment ID:* `{payment_id}`\n" if payment_id else ""
             await query.edit_message_text(
                 f"*Order #{order_id} - Pay with {coin}*\n\n"
                 f"*Amount:* `{payment_info.get('amount', 'N/A')}` {coin}\n"
                 f"*Send to:* `{payment_info.get('address', 'N/A')}`\n\n"
+                f"{payment_id_line}"
                 f"Please send the exact amount to complete your order.\n"
                 f"Payment will be confirmed automatically.",
                 parse_mode='Markdown',

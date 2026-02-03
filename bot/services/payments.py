@@ -6,6 +6,7 @@ import uuid
 import logging
 from typing import Tuple, Optional
 from decimal import Decimal
+from urllib.parse import urlparse
 
 from ..config import get_settings
 from ..error_handler import RetryableError
@@ -19,6 +20,15 @@ class MoneroPaymentService:
     def __init__(self):
         self.settings = get_settings()
         self._wallet = None
+
+    def _split_rpc_url(self, rpc_url: str) -> tuple[str, int]:
+        if "://" in rpc_url:
+            parsed = urlparse(rpc_url)
+        else:
+            parsed = urlparse(f"http://{rpc_url}")
+        host = parsed.hostname or rpc_url
+        port = parsed.port or 18082
+        return host, port
         
     def _get_wallet(self):
         """Get or create wallet connection."""
@@ -26,9 +36,11 @@ class MoneroPaymentService:
             try:
                 from monero.wallet import Wallet
                 from monero.backends.jsonrpc import JSONRPCWallet
+                host, port = self._split_rpc_url(self.settings.monero_rpc_url)
                 # Create backend with digest auth credentials
                 backend = JSONRPCWallet(
-                    host=self.settings.monero_rpc_url,
+                    host=host,
+                    port=port,
                     user=self.settings.monero_rpc_user or None,
                     password=self.settings.monero_rpc_password or None,
                 )
@@ -39,6 +51,27 @@ class MoneroPaymentService:
                 raise RetryableError("Monero wallet connection failed")
         return self._wallet
     
+    def get_address_for_payment_id(self, payment_id: str, vendor_wallet: Optional[str] = None) -> str:
+        if self.settings.monero_rpc_url:
+            try:
+                wallet = self._get_wallet()
+                if wallet:
+                    address = wallet.make_integrated_address(payment_id=payment_id)
+                    return str(address)
+            except Exception as e:
+                logger.error(f"Failed to create Monero address via RPC: {e}")
+
+        if vendor_wallet:
+            logger.info(f"Using vendor wallet address with payment ID: {payment_id}")
+            return vendor_wallet
+
+        if self.settings.environment == "development":
+            mock_address = f"4{payment_id}{'A' * (95 - len(payment_id) - 1)}"
+            logger.warning("Using mock payment address (development mode)")
+            return mock_address
+
+        raise RetryableError("Failed to create payment address - vendor wallet not configured")
+
     def create_address(self, vendor_wallet: Optional[str] = None) -> Tuple[str, str]:
         """Create a new payment address with unique payment ID.
 
@@ -46,30 +79,8 @@ class MoneroPaymentService:
             vendor_wallet: Optional vendor wallet address to use as fallback
         """
         payment_id = uuid.uuid4().hex[:16]  # 16 char payment ID for Monero
-
-        # Try RPC first if configured
-        if self.settings.monero_rpc_url:
-            try:
-                wallet = self._get_wallet()
-                if wallet:
-                    # Create integrated address with payment ID
-                    address = wallet.make_integrated_address(payment_id=payment_id)
-                    return str(address), payment_id
-            except Exception as e:
-                logger.error(f"Failed to create Monero address via RPC: {e}")
-
-        # Use vendor's wallet address if available
-        if vendor_wallet:
-            logger.info(f"Using vendor wallet address with payment ID: {payment_id}")
-            return vendor_wallet, payment_id
-
-        # Final fallback for development/testing
-        if self.settings.environment == "development":
-            mock_address = f"4{payment_id}{'A' * (95 - len(payment_id) - 1)}"
-            logger.warning(f"Using mock payment address (development mode)")
-            return mock_address, payment_id
-
-        raise RetryableError("Failed to create payment address - vendor wallet not configured")
+        address = self.get_address_for_payment_id(payment_id, vendor_wallet=vendor_wallet)
+        return address, payment_id
     
     def check_paid(self, payment_id: str, expected_amount: Optional[Decimal] = None) -> bool:
         """Check if payment has been received."""

@@ -8,6 +8,7 @@ import base64, os
 from bot.config import Settings
 import pytest
 from datetime import timedelta, datetime
+from unittest.mock import patch
 
 
 def test_create_and_mark_paid(monkeypatch, tmp_path) -> None:
@@ -210,6 +211,46 @@ def test_get_payment_info_xmr(monkeypatch, tmp_path) -> None:
     assert payment_info["amount"] == Decimal("5.0")  # 2.5 * 2
     assert payment_info["coin"] == "XMR"
     assert "address" in payment_info
+
+
+def test_get_payment_info_uses_existing_payment_id(monkeypatch, tmp_path) -> None:
+    """Test get_payment_info uses stored payment_id."""
+    key = base64.b64encode(os.urandom(32)).decode()
+    settings = Settings(
+        telegram_token="123:ABC",
+        admin_ids="",
+        super_admin_ids="",
+        monero_rpc_url="url",
+        encryption_key=key,
+        data_retention_days=30,
+        default_commission_rate=0.05,
+        totp_secret=None,
+    )
+    monkeypatch.setattr("bot.config.get_settings", lambda: settings)
+    monkeypatch.setattr("bot.services.orders.get_settings", lambda: settings)
+
+    db = Database(url=f"sqlite:///{tmp_path/'test.db'}")
+    vendors = VendorService(db)
+    vendor = vendors.add_vendor(Vendor(telegram_id=1, name="vend", wallet_address="4ABC..."))
+    catalog = CatalogService(db)
+    payments = PaymentService()
+    orders = OrderService(db, payments, catalog, vendors)
+    product = catalog.add_product(
+        Product(name="p", description="", price_xmr=Decimal("2.5"), inventory=10, vendor_id=vendor.id)
+    )
+
+    with patch.object(payments, "get_address_for_payment_id", return_value="4ADDR") as mock_get_address:
+        order_data = orders.create_order(product.id, 1, "addr")
+        mock_get_address.reset_mock()
+
+        payment_info = orders.get_payment_info(order_data["order_id"], "XMR")
+
+        mock_get_address.assert_called_once_with(
+            order_data["payment_id"],
+            vendor_wallet=vendor.wallet_address
+        )
+        assert payment_info["address"] == "4ADDR"
+        assert payment_info["payment_id"] == order_data["payment_id"]
 
 
 def test_get_payment_info_other_coin(monkeypatch, tmp_path) -> None:

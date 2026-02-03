@@ -2074,6 +2074,24 @@ class TestOrderCallbackExtended:
         assert "1.5" in call_args[0]
 
     @pytest.mark.asyncio
+    async def test_order_pay_includes_payment_id(self, mock_update, mock_context):
+        """Test order:pay callback includes payment ID when provided."""
+        mock_update.callback_query.data = "order:pay:42:xmr"
+
+        mock_orders = MagicMock(spec=OrderService)
+        mock_orders.get_payment_info.return_value = {
+            'amount': '1.5',
+            'address': '4ABC123...',
+            'payment_id': 'pid123'
+        }
+
+        await handle_order_callback(mock_update, mock_context, orders=mock_orders)
+
+        call_args = mock_update.callback_query.edit_message_text.call_args[0]
+        assert "Payment ID" in call_args[0]
+        assert "pid123" in call_args[0]
+
+    @pytest.mark.asyncio
     async def test_order_pay_error(self, mock_update, mock_context):
         """Test order:pay callback with error."""
         mock_update.callback_query.data = "order:pay:42:xmr"

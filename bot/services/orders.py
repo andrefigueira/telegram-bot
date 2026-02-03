@@ -7,7 +7,7 @@ from typing import List
 from datetime import datetime, timedelta
 from sqlmodel import select
 
-from ..models import Order, Database, encrypt, decrypt, Product, PostageType
+from ..models import Order, Database, encrypt, decrypt, Product, PostageType, Vendor
 from .payments import PaymentService
 from .vendors import VendorService
 from .catalog import CatalogService
@@ -163,25 +163,32 @@ class OrderService:
             if not product:
                 raise ValueError("Product not found")
 
+            vendor = session.get(Vendor, order.vendor_id)
+            vendor_wallet = getattr(vendor, "wallet_address", None)
+
             # Use Decimal for precise calculation
             price_xmr = Decimal(str(product.price_xmr)) if not isinstance(product.price_xmr, Decimal) else product.price_xmr
             total_xmr = price_xmr * Decimal(order.quantity)
 
             # For XMR, use the existing payment address
-            if coin == "XMR":
-                # Regenerate payment address from payment_id
-                payment_address, _ = self.payments.create_address()
+            coin_upper = coin.upper()
+            if coin_upper == "XMR":
+                payment_address = self.payments.get_address_for_payment_id(
+                    order.payment_id,
+                    vendor_wallet=vendor_wallet
+                )
                 return {
                     "amount": total_xmr,
                     "address": payment_address,
-                    "coin": "XMR"
+                    "coin": coin_upper,
+                    "payment_id": order.payment_id
                 }
 
             # For other coins, return placeholder (crypto swap integration needed)
             return {
                 "amount": total_xmr,
                 "address": "Payment address pending...",
-                "coin": coin
+                "coin": coin_upper
             }
 
     def fulfill_order(self, order_id: int) -> Order:
