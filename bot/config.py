@@ -31,6 +31,16 @@ class Settings(BaseSettings):
     data_retention_days: int = Field(30, env="DATA_RETENTION_DAYS")
     default_commission_rate: float = Field(0.05, env="DEFAULT_COMMISSION_RATE")
 
+    # Multi-currency blockchain API keys
+    etherscan_api_key: str = Field("", env="ETHERSCAN_API_KEY")
+    infura_project_id: str = Field("", env="INFURA_PROJECT_ID")
+    blockcypher_api_key: str = Field("", env="BLOCKCYPHER_API_KEY")
+
+    # Confirmation thresholds per currency
+    btc_confirmation_threshold: int = Field(6, env="BTC_CONFIRMATION_THRESHOLD")
+    eth_confirmation_threshold: int = Field(12, env="ETH_CONFIRMATION_THRESHOLD")
+    xmr_confirmation_threshold: int = Field(10, env="XMR_CONFIRMATION_THRESHOLD")
+
     # Logging configuration
     log_level: str = Field("INFO", env="LOG_LEVEL")
     log_file: str | None = Field(None, env="LOG_FILE")

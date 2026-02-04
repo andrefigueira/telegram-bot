@@ -3,15 +3,11 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from typing import List, Optional
 
-# Supported cryptocurrencies for payment
+# Supported cryptocurrencies for payment (multi-crypto implementation)
 SUPPORTED_COINS = [
-    ("XMR", "Monero"),
-    ("BTC", "Bitcoin"),
-    ("ETH", "Ethereum"),
-    ("SOL", "Solana"),
-    ("LTC", "Litecoin"),
-    ("USDT", "Tether"),
-    ("USDC", "USD Coin"),
+    ("XMR", "Monero", "🔒"),
+    ("BTC", "Bitcoin", "₿"),
+    ("ETH", "Ethereum", "Ξ"),
 ]
 
 # Supported fiat currencies for product pricing
@@ -74,11 +70,11 @@ def payment_methods_keyboard(selected: Optional[List[str]] = None) -> InlineKeyb
         selected = ["XMR"]  # XMR is always enabled by default
 
     keyboard = []
-    for coin_code, coin_name in SUPPORTED_COINS:
-        check = "[x]" if coin_code in selected else "[ ]"
+    for coin_code, coin_name, emoji in SUPPORTED_COINS:
+        check = "✓" if coin_code in selected else "○"
         keyboard.append([
             InlineKeyboardButton(
-                f"{check} {coin_name} ({coin_code})",
+                f"{check} {emoji} {coin_name} ({coin_code})",
                 callback_data=f"pay:toggle:{coin_code}"
             )
         ])
@@ -182,28 +178,23 @@ def quantity_keyboard(product_id: int, max_qty: int = 10) -> InlineKeyboardMarku
     return InlineKeyboardMarkup(keyboard)
 
 
-def payment_coin_keyboard(order_id: int, accepted_coins: Optional[List[str]] = None) -> InlineKeyboardMarkup:
-    """Payment coin selection keyboard."""
+def payment_coin_keyboard(accepted_coins: Optional[List[str]] = None) -> InlineKeyboardMarkup:
+    """Payment coin selection keyboard for order checkout."""
     if accepted_coins is None:
-        accepted_coins = ["XMR"]
+        accepted_coins = ["XMR", "BTC", "ETH"]
 
     keyboard = []
-    row = []
 
-    for coin_code, coin_name in SUPPORTED_COINS:
+    for coin_code, coin_name, emoji in SUPPORTED_COINS:
         if coin_code in accepted_coins:
-            row.append(InlineKeyboardButton(
-                f"{coin_name}",
-                callback_data=f"order:pay:{order_id}:{coin_code}"
-            ))
-            if len(row) == 2:
-                keyboard.append(row)
-                row = []
+            keyboard.append([
+                InlineKeyboardButton(
+                    f"{emoji} Pay with {coin_name} ({coin_code})",
+                    callback_data=f"order:currency:{coin_code}"
+                )
+            ])
 
-    if row:
-        keyboard.append(row)
-
-    keyboard.append([InlineKeyboardButton("Cancel Order", callback_data=f"order:cancel:{order_id}")])
+    keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="menu:main")])
     return InlineKeyboardMarkup(keyboard)
 
 

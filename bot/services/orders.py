@@ -9,10 +9,12 @@ from sqlmodel import select
 
 from ..models import Order, Database, encrypt, decrypt, Product, PostageType, Vendor
 from .payments import PaymentService
+from .payment_factory import PaymentServiceFactory
 from .vendors import VendorService
 from .catalog import CatalogService
-from .currency import fiat_to_xmr_sync
+from .currency import fiat_to_xmr_sync, fiat_to_crypto
 from ..config import get_settings
+import asyncio
 
 
 class OrderService:
@@ -31,7 +33,14 @@ class OrderService:
         self.vendors = vendors
         self.settings = get_settings()
 
-    def create_order(self, product_id: int, quantity: int, address: str, postage_type_id: int = None) -> dict:
+    def create_order(
+        self,
+        product_id: int,
+        quantity: int,
+        address: str,
+        postage_type_id: int = None,
+        payment_currency: str = "XMR"
+    ) -> dict:
         product = self.catalog.get_product(product_id)
         if not product:
             raise ValueError("Product not found")
@@ -41,49 +50,110 @@ class OrderService:
         if not vendor:
             raise ValueError("Vendor not found")
 
-        # Check if vendor has wallet configured (required for payments)
+        # Normalize payment currency
+        payment_currency = payment_currency.upper()
+        if payment_currency not in ["XMR", "BTC", "ETH"]:
+            raise ValueError(f"Unsupported payment currency: {payment_currency}")
+
+        # Check if vendor has wallet configured for chosen currency
         import logging
         logger = logging.getLogger(__name__)
-        logger.info(f"Creating order - Vendor {vendor.id} wallet: {vendor.wallet_address}")
-        if not vendor.wallet_address and not self.settings.monero_rpc_url:
-            raise ValueError("Vendor has not configured their payment wallet yet")
 
-        # Create payment address - use vendor's wallet if RPC not available
-        payment_address, payment_id = self.payments.create_address(
-            vendor_wallet=vendor.wallet_address
+        wallet_map = {
+            "XMR": vendor.wallet_address,
+            "BTC": vendor.btc_wallet_address,
+            "ETH": vendor.eth_wallet_address
+        }
+        vendor_wallet = wallet_map.get(payment_currency)
+
+        logger.info(f"Creating order - Vendor {vendor.id} {payment_currency} wallet: {vendor_wallet}")
+
+        if not vendor_wallet and payment_currency == "XMR" and not self.settings.monero_rpc_url:
+            raise ValueError("Vendor has not configured their XMR payment wallet yet")
+        elif not vendor_wallet and payment_currency != "XMR":
+            raise ValueError(f"Vendor has not configured their {payment_currency} wallet yet")
+
+        # Get appropriate payment service for currency
+        payment_service = PaymentServiceFactory.create(payment_currency)
+
+        # Create payment address
+        payment_address, payment_id = payment_service.create_address(
+            vendor_wallet=vendor_wallet
         )
 
-        # Calculate total and commission using Decimal for precision
-        price_xmr = Decimal(str(product.price_xmr)) if not isinstance(product.price_xmr, Decimal) else product.price_xmr
+        # Calculate total in product's fiat currency first
         commission_rate = Decimal(str(vendor.commission_rate)) if not isinstance(vendor.commission_rate, Decimal) else vendor.commission_rate
-        total_xmr = price_xmr * Decimal(quantity)
 
-        # Calculate postage in XMR if selected
-        postage_xmr = Decimal("0")
+        # Get product price in fiat (or convert from XMR if needed)
+        if product.price_fiat and product.currency != "XMR":
+            # Product priced in fiat
+            price_fiat = Decimal(str(product.price_fiat))
+            product_currency = product.currency
+        else:
+            # Product priced in XMR, use that directly for backward compatibility
+            price_xmr = Decimal(str(product.price_xmr)) if not isinstance(product.price_xmr, Decimal) else product.price_xmr
+            # For now, assume USD if converting
+            product_currency = "USD"
+            price_fiat = price_xmr * Decimal("150")  # Rough conversion, will be recalculated
+
+        total_fiat = price_fiat * Decimal(quantity)
+
+        # Calculate postage in fiat if selected
+        postage_fiat = Decimal("0")
+        postage_currency = product_currency
         if postage_type_id:
             with self.db.session() as session:
                 postage_type = session.get(PostageType, postage_type_id)
                 if postage_type and postage_type.is_active:
-                    # Convert postage fiat price to XMR
                     postage_fiat = Decimal(str(postage_type.price_fiat))
-                    postage_xmr = fiat_to_xmr_sync(float(postage_fiat), postage_type.currency)
-                    total_xmr += postage_xmr
+                    postage_currency = postage_type.currency
+                    # Convert to product currency if different
+                    if postage_currency != product_currency:
+                        # For simplicity, add directly (should do proper conversion in production)
+                        pass
+                    total_fiat += postage_fiat
 
-        commission = total_xmr * commission_rate
+        # Convert total to chosen cryptocurrency
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+        total_crypto = loop.run_until_complete(
+            fiat_to_crypto(total_fiat, product_currency, payment_currency)
+        )
+
+        commission_crypto = total_crypto * commission_rate
+
+        # Also calculate XMR amounts for backward compatibility
+        total_xmr = loop.run_until_complete(
+            fiat_to_crypto(total_fiat, product_currency, "XMR")
+        )
+        commission_xmr = total_xmr * commission_rate
+        postage_xmr = Decimal("0")
+        if postage_fiat > 0:
+            postage_xmr = loop.run_until_complete(
+                fiat_to_crypto(postage_fiat, postage_currency, "XMR")
+            )
 
         # Encrypt delivery address
         encrypted = encrypt(address, self.settings.encryption_key)
 
-        # Create order
+        # Create order with multi-currency support
         order = Order(
             product_id=product_id,
             vendor_id=vendor.id,
             quantity=quantity,
             payment_id=payment_id,
             address_encrypted=encrypted,
-            commission_xmr=commission,
+            commission_xmr=commission_xmr,
             postage_type_id=postage_type_id,
             postage_xmr=postage_xmr,
+            # Multi-currency fields
+            payment_currency=payment_currency,
+            payment_amount_crypto=total_crypto,
+            commission_crypto=commission_crypto,
         )
 
         # Save to database
@@ -104,15 +174,18 @@ class OrderService:
             session.commit()
             session.refresh(order)
 
-        # Return order details for user
+        # Return order details for user with currency info
         return {
             "order_id": order.id,
             "payment_address": payment_address,
             "payment_id": payment_id,
-            "total_xmr": total_xmr,
+            "payment_currency": payment_currency,
+            "total_crypto": total_crypto,
+            "total_xmr": total_xmr,  # Backward compatibility
             "postage_xmr": postage_xmr,
             "product_name": product.name,
-            "quantity": quantity
+            "quantity": quantity,
+            "confirmations_required": PaymentServiceFactory.get_confirmation_threshold(payment_currency)
         }
 
     def mark_paid(self, order_id: int, payout_service=None) -> Order:

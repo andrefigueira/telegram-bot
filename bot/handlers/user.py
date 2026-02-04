@@ -48,15 +48,11 @@ HELP_TEXT = """
 
 *Payment Methods*
 We accept the following cryptocurrencies:
-- Monero (XMR)
-- Bitcoin (BTC)
-- Ethereum (ETH)
-- Solana (SOL)
-- Litecoin (LTC)
-- Tether (USDT)
-- USD Coin (USDC)
+- 🔒 Monero (XMR)
+- ₿ Bitcoin (BTC)
+- Ξ Ethereum (ETH)
 
-Non-XMR payments are automatically converted.
+All payments are verified via blockchain.
 """
 
 SETUP_INTRO = """
@@ -357,11 +353,35 @@ async def handle_setup_callback(update: Update, context: ContextTypes.DEFAULT_TY
             parse_mode='Markdown'
         )
     elif action == "wallet":
-        context.user_data['awaiting_input'] = 'wallet'
+        # Show currency selection for wallet setup
+        keyboard = []
+        for coin_code, coin_name, emoji in SUPPORTED_COINS:
+            keyboard.append([
+                InlineKeyboardButton(
+                    f"{emoji} {coin_name} ({coin_code})",
+                    callback_data=f"setup:wallet_currency:{coin_code}"
+                )
+            ])
+        keyboard.append([InlineKeyboardButton("Back", callback_data="setup:main")])
+
+        from telegram import InlineKeyboardMarkup
         await query.edit_message_text(
             "*Set Wallet Address*\n\n"
-            "Please send your Monero (XMR) wallet address.\n\n"
-            "This is where you'll receive payments.",
+            "Select the cryptocurrency:",
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+
+    elif action == "wallet_currency" and len(parts) >= 3:
+        currency = parts[2].upper()
+        context.user_data['awaiting_input'] = 'wallet'
+        context.user_data['wallet_currency'] = currency
+
+        currency_names = {"XMR": "Monero", "BTC": "Bitcoin", "ETH": "Ethereum"}
+        await query.edit_message_text(
+            f"*Set {currency} Wallet Address*\n\n"
+            f"Please send your {currency_names.get(currency, currency)} wallet address.\n\n"
+            f"This is where you'll receive {currency} payments.",
             parse_mode='Markdown'
         )
     elif action == "currency":
@@ -392,23 +412,39 @@ async def handle_setup_callback(update: Update, context: ContextTypes.DEFAULT_TY
         vendor_status = "Yes" if is_vendor else "No"
         if vendor:
             shop_name = vendor.shop_name or "Not set"
-            wallet = vendor.wallet_address or "Not set"
             payments = vendors.get_accepted_payments_list(vendor)
             pricing_currency = vendor.pricing_currency or "USD"
+
+            # Build multi-currency wallet display
+            wallet_lines = []
+            xmr_wallet = vendor.wallet_address or None
+            btc_wallet = vendor.btc_wallet_address or None
+            eth_wallet = vendor.eth_wallet_address or None
+
+            if xmr_wallet:
+                short_xmr = f"`{xmr_wallet[:20]}...`"
+                wallet_lines.append(f"🔒 *XMR:* {short_xmr}")
+            if btc_wallet:
+                short_btc = f"`{btc_wallet[:20]}...`"
+                wallet_lines.append(f"₿ *BTC:* {short_btc}")
+            if eth_wallet:
+                short_eth = f"`{eth_wallet[:20]}...`"
+                wallet_lines.append(f"Ξ *ETH:* {short_eth}")
+
+            wallets_display = "\n".join(wallet_lines) if wallet_lines else "Not set"
         else:
             shop_name = "Not set"
-            wallet = "Not set"
+            wallets_display = "Not set"
             payments = ["XMR"]
             pricing_currency = "USD"
 
         payments_str = ", ".join(payments)
-        wallet_display = f"`{wallet[:20]}...`" if wallet != "Not set" and len(wallet) > 20 else wallet
         await query.edit_message_text(
             f"*Your Settings*\n\n"
             f"*Vendor:* {vendor_status}\n"
             f"*Shop Name:* {shop_name}\n"
             f"*Pricing Currency:* {pricing_currency}\n"
-            f"*Wallet:* {wallet_display}\n"
+            f"*Wallets:*\n{wallets_display}\n\n"
             f"*Payment Methods:* {payments_str}",
             parse_mode='Markdown',
             reply_markup=setup_keyboard(is_vendor)
@@ -781,6 +817,76 @@ async def handle_order_callback(update: Update, context: ContextTypes.DEFAULT_TY
             parse_mode='Markdown'
         )
 
+    elif action == "currency" and len(parts) >= 3:
+        # order:currency:COIN (e.g., order:currency:BTC)
+        payment_currency = parts[2].upper()
+
+        product_id = context.user_data.get('ordering_product')
+        quantity = context.user_data.get('order_quantity', 1)
+        postage_id = context.user_data.get('order_postage_id')
+        delivery_address = context.user_data.get('delivery_address')
+
+        if orders and product_id and delivery_address:
+            try:
+                # Create order with selected payment currency
+                order_data = orders.create_order(
+                    product_id,
+                    quantity,
+                    delivery_address,
+                    postage_type_id=postage_id,
+                    payment_currency=payment_currency
+                )
+
+                # Clear context
+                context.user_data['ordering_product'] = None
+                context.user_data['order_quantity'] = None
+                context.user_data['order_postage_id'] = None
+                context.user_data['delivery_address'] = None
+
+                # Get confirmation thresholds
+                from ..services.payment_factory import PaymentServiceFactory
+                confirmations_required = PaymentServiceFactory.get_confirmation_threshold(payment_currency)
+
+                # Build order summary with postage info
+                postage_info = ""
+                if postage_id and postage:
+                    pt = postage.get_postage_type(postage_id)
+                    if pt:
+                        postage_info = f"\n*Postage:* {pt.name}"
+
+                # Currency-specific payment instructions
+                payment_id_line = ""
+                if payment_currency == "XMR" and order_data.get('payment_id'):
+                    payment_id_line = f"*Payment ID:* `{order_data['payment_id']}`\n\n"
+
+                # Estimate confirmation time
+                confirm_time = {
+                    "XMR": "~20 minutes",
+                    "BTC": "~1 hour",
+                    "ETH": "~3 minutes"
+                }.get(payment_currency, "")
+
+                await query.edit_message_text(
+                    f"*Order #{order_data['order_id']} Created!*\n\n"
+                    f"*Amount:* `{order_data['total_crypto']:.8f}` {payment_currency}{postage_info}\n\n"
+                    f"*Send to:*\n`{order_data['payment_address']}`\n\n"
+                    f"{payment_id_line}"
+                    f"Send the exact amount to complete your order.\n"
+                    f"Requires {confirmations_required} confirmations ({confirm_time}).",
+                    parse_mode='Markdown',
+                    reply_markup=order_confirmation_keyboard(order_data['order_id'])
+                )
+            except Exception as e:
+                await query.edit_message_text(
+                    f"Error creating order: {str(e)}",
+                    reply_markup=main_menu_keyboard()
+                )
+        else:
+            await query.edit_message_text(
+                "Order session expired. Please try again.",
+                reply_markup=main_menu_keyboard()
+            )
+
     elif action == "status" and orders:
         order_id = int(parts[2])
         order = orders.get_order(order_id)
@@ -908,20 +1014,43 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         )
 
     elif awaiting == 'wallet':
-        # Basic validation - Monero addresses start with 4 or 8 and are 95 chars
-        if len(text) >= 95 and (text.startswith('4') or text.startswith('8')):
-            # Save to database
-            if vendor and vendors:
+        currency = context.user_data.get('wallet_currency', 'XMR')
+
+        # Validate address based on currency
+        valid = False
+        error_msg = f"Invalid {currency} address."
+
+        if currency == "XMR":
+            valid = len(text) >= 95 and (text.startswith('4') or text.startswith('8'))
+            error_msg = "Invalid Monero address. Please send a valid XMR address (starts with 4 or 8, 95+ chars)."
+        elif currency == "BTC":
+            from ..services.bitcoin_payment import BitcoinPaymentService
+            valid = BitcoinPaymentService.validate_address(text)
+            error_msg = "Invalid Bitcoin address. Please send a valid BTC address (starts with 1, 3, or bc1)."
+        elif currency == "ETH":
+            from ..services.ethereum_payment import EthereumPaymentService
+            valid = EthereumPaymentService.validate_address(text)
+            error_msg = "Invalid Ethereum address. Please send a valid ETH address (starts with 0x, 42 chars)."
+
+        if valid and vendor and vendors:
+            # Save to appropriate field
+            if currency == "XMR":
                 vendors.update_settings(vendor.id, wallet_address=text)
+            elif currency == "BTC":
+                vendors.update_settings(vendor.id, btc_wallet_address=text)
+            elif currency == "ETH":
+                vendors.update_settings(vendor.id, eth_wallet_address=text)
+
             context.user_data['awaiting_input'] = None
+            context.user_data['wallet_currency'] = None
             await update.message.reply_text(
-                f"*Wallet address saved!*\n\n`{text[:30]}...`",
+                f"*{currency} wallet address saved!*\n\n`{text[:30]}...`",
                 parse_mode='Markdown',
                 reply_markup=setup_keyboard(is_vendor)
             )
         else:
             await update.message.reply_text(
-                "Invalid Monero address. Please send a valid XMR address.",
+                error_msg,
                 reply_markup=setup_keyboard(is_vendor)
             )
 
@@ -930,35 +1059,26 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         quantity = context.user_data.get('order_quantity', 1)
         postage_id = context.user_data.get('order_postage_id')
 
-        if orders and product_id:
-            try:
-                order_data = orders.create_order(product_id, quantity, text, postage_type_id=postage_id)
-                context.user_data['awaiting_input'] = None
-                context.user_data['ordering_product'] = None
-                context.user_data['order_quantity'] = None
-                context.user_data['order_postage_id'] = None
+        if product_id and catalog:
+            # Store the address for later
+            context.user_data['delivery_address'] = text
+            context.user_data['awaiting_input'] = None
 
-                # Build order summary
-                postage_info = ""
-                if postage_id and postage:
-                    pt = postage.get_postage_type(postage_id)
-                    if pt:
-                        postage_info = f"\n*Postage:* {pt.name}"
+            # Get vendor's accepted payment methods
+            product = catalog.get_product(product_id)
+            if product and vendors:
+                vendor = vendors.get_vendor(product.vendor_id)
+                accepted_coins = vendors.get_accepted_payments_list(vendor) if vendor else ["XMR", "BTC", "ETH"]
+            else:
+                accepted_coins = ["XMR", "BTC", "ETH"]
 
-                await update.message.reply_text(
-                    f"*Order #{order_data['order_id']} Created!*\n\n"
-                    f"*Amount:* `{order_data['total_xmr']:.6f}` XMR{postage_info}\n"
-                    f"*Send to:*\n`{order_data['payment_address']}`\n\n"
-                    f"*Payment ID:* `{order_data['payment_id']}`\n\n"
-                    f"Send the exact amount to complete your order.",
-                    parse_mode='Markdown',
-                    reply_markup=order_confirmation_keyboard(order_data['order_id'])
-                )
-            except Exception as e:
-                await update.message.reply_text(
-                    f"Error creating order: {str(e)}",
-                    reply_markup=main_menu_keyboard()
-                )
+            # Show currency selection keyboard
+            await update.message.reply_text(
+                "*Select Payment Currency*\n\n"
+                "Choose how you'd like to pay:",
+                parse_mode='Markdown',
+                reply_markup=payment_coin_keyboard(accepted_coins)
+            )
         else:
             await update.message.reply_text(
                 "Order session expired. Please try again.",

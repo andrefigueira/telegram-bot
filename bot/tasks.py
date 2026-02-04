@@ -6,10 +6,11 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 
 from sqlmodel import select, delete
-from .models import Database, Order, Product
+from .models import Database, Order, Product, Vendor
 from .config import get_settings
 from .services.payout import PayoutService
 from .services.payments import PaymentService
+from .services.payment_factory import PaymentServiceFactory
 
 logger = logging.getLogger(__name__)
 
@@ -39,9 +40,8 @@ async def cleanup_old_orders(db: Database) -> None:
 
 
 async def check_pending_payments(db: Database) -> None:
-    """Check pending orders for received payments."""
+    """Check pending orders for received payments (multi-currency support)."""
     try:
-        payment_service = PaymentService()
         payout_service = PayoutService(db)
 
         with db.session() as session:
@@ -57,27 +57,103 @@ async def check_pending_payments(db: Database) -> None:
 
             for order in pending_orders:
                 try:
-                    # Get product to calculate expected amount
-                    product = session.get(Product, order.product_id)
-                    if not product:
-                        continue
+                    # Get payment currency (default to XMR for old orders)
+                    payment_currency = getattr(order, 'payment_currency', 'XMR') or 'XMR'
 
-                    # Calculate expected total
-                    price_xmr = Decimal(str(product.price_xmr))
-                    expected_amount = price_xmr * order.quantity + order.postage_xmr
+                    # Get appropriate payment service for this order's currency
+                    payment_service = PaymentServiceFactory.create(payment_currency)
 
-                    # Check if payment received
-                    if payment_service.check_paid(order.payment_id, expected_amount):
+                    # Get expected amount (use new field if available, fallback to legacy)
+                    expected_amount = getattr(order, 'payment_amount_crypto', None)
+                    if not expected_amount:
+                        # Legacy order - calculate from price_xmr
+                        product = session.get(Product, order.product_id)
+                        if not product:
+                            continue
+                        price_xmr = Decimal(str(product.price_xmr))
+                        expected_amount = price_xmr * order.quantity + order.postage_xmr
+
+                    # For BTC/ETH, need vendor address and order creation time
+                    check_kwargs = {
+                        "payment_id": order.payment_id,
+                        "expected_amount": expected_amount
+                    }
+
+                    if payment_currency in ["BTC", "ETH"]:
+                        # Get vendor wallet address
+                        vendor = session.get(Vendor, order.vendor_id)
+                        if not vendor:
+                            continue
+
+                        wallet_field = {
+                            "BTC": "btc_wallet_address",
+                            "ETH": "eth_wallet_address"
+                        }[payment_currency]
+
+                        vendor_address = getattr(vendor, wallet_field, None)
+                        if not vendor_address:
+                            logger.warning(
+                                f"Order #{order.id}: Vendor missing {payment_currency} wallet"
+                            )
+                            continue
+
+                        check_kwargs["address"] = vendor_address
+                        check_kwargs["created_at"] = order.created_at
+
+                        # Check if paid (async for BTC/ETH)
+                        is_paid = await payment_service.check_paid(**check_kwargs)
+
+                        # Get confirmations
+                        if hasattr(payment_service, 'get_confirmations'):
+                            confirmations = await payment_service.get_confirmations(
+                                order.payment_id,
+                                address=vendor_address,
+                                created_at=order.created_at
+                            )
+                            order.crypto_confirmations = confirmations
+                    else:
+                        # XMR - synchronous check
+                        is_paid = payment_service.check_paid(**check_kwargs)
+
+                        # Get confirmations for XMR
+                        if hasattr(payment_service, 'get_confirmations'):
+                            confirmations = payment_service.get_confirmations(order.payment_id)
+                            order.crypto_confirmations = confirmations
+
+                    # Check if payment confirmed with sufficient confirmations
+                    confirmation_threshold = PaymentServiceFactory.get_confirmation_threshold(
+                        payment_currency
+                    )
+
+                    if is_paid and order.crypto_confirmations >= confirmation_threshold:
                         # Update order state
                         order.state = "PAID"
                         session.add(order)
                         session.commit()
 
-                        logger.info(f"Order #{order.id} marked as PAID")
+                        logger.info(
+                            f"Order #{order.id} marked as PAID "
+                            f"({payment_currency}, {order.crypto_confirmations} confs)"
+                        )
 
                         # Create payout record for vendor
-                        vendor_share = expected_amount - order.commission_xmr
-                        payout_service.create_payout(order.id, order.vendor_id, vendor_share)
+                        vendor_share = expected_amount - (
+                            getattr(order, 'commission_crypto', None) or order.commission_xmr
+                        )
+                        payout_service.create_payout(
+                            order.id,
+                            order.vendor_id,
+                            vendor_share,
+                            currency=payment_currency
+                        )
+                    elif is_paid:
+                        # Payment found but not enough confirmations yet
+                        session.add(order)
+                        session.commit()
+                        logger.debug(
+                            f"Order #{order.id}: Payment pending "
+                            f"({order.crypto_confirmations}/{confirmation_threshold} confs)"
+                        )
 
                 except Exception as e:
                     logger.error(f"Error checking order #{order.id}: {e}")

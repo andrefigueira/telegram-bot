@@ -62,13 +62,39 @@ class PayoutService:
         """Set the platform commission rate."""
         self.set_setting("commission_rate", str(rate))
 
-    def get_platform_wallet(self) -> Optional[str]:
-        """Get the platform payout wallet address."""
-        return self.get_setting("platform_wallet", "") or None
+    def set_platform_wallet(self, address: str, currency: str = "XMR") -> None:
+        """Set the platform payout wallet address for a specific currency."""
+        currency = currency.upper()
+        key_map = {
+            "XMR": "platform_xmr_wallet",
+            "BTC": "platform_btc_wallet",
+            "ETH": "platform_eth_wallet"
+        }
+        if currency not in key_map:
+            raise ValueError(f"Unsupported currency: {currency}")
 
-    def set_platform_wallet(self, address: str) -> None:
-        """Set the platform payout wallet address."""
-        self.set_setting("platform_wallet", address)
+        self.set_setting(key_map[currency], address)
+        logger.info(f"Set platform {currency} wallet to {address[:20]}...")
+
+    def get_platform_wallet(self, currency: str = "XMR") -> Optional[str]:
+        """Get the platform payout wallet address for a specific currency."""
+        currency = currency.upper()
+        key_map = {
+            "XMR": "platform_xmr_wallet",
+            "BTC": "platform_btc_wallet",
+            "ETH": "platform_eth_wallet"
+        }
+        if currency not in key_map:
+            # Fallback to legacy key for XMR
+            if currency == "XMR":
+                return self.get_setting("platform_wallet", "") or None
+            return None
+
+        wallet = self.get_setting(key_map[currency], "")
+        if not wallet and currency == "XMR":
+            # Fallback to legacy key
+            wallet = self.get_setting("platform_wallet", "")
+        return wallet or None
 
     # Payout Management
 
@@ -88,19 +114,27 @@ class PayoutService:
         vendor_share = total_xmr - platform_share
         return vendor_share, platform_share
 
-    def create_payout(self, order_id: int, vendor_id: int, amount_xmr: Decimal) -> Payout:
-        """Create a pending payout record."""
+    def create_payout(
+        self,
+        order_id: int,
+        vendor_id: int,
+        amount: Decimal,
+        currency: str = "XMR"
+    ) -> Payout:
+        """Create a pending payout record (multi-currency support)."""
         payout = Payout(
             order_id=order_id,
             vendor_id=vendor_id,
-            amount_xmr=amount_xmr,
+            amount_xmr=amount if currency == "XMR" else Decimal("0"),
+            amount_crypto=amount,
+            payment_currency=currency,
             status="PENDING"
         )
         with self.db.session() as session:
             session.add(payout)
             session.commit()
             session.refresh(payout)
-            logger.info(f"Created payout {payout.id} for vendor {vendor_id}: {amount_xmr} XMR")
+            logger.info(f"Created payout {payout.id} for vendor {vendor_id}: {amount} {currency}")
             return payout
 
     def get_pending_payouts(self) -> List[Payout]:
@@ -204,6 +238,26 @@ class PayoutService:
 
         return results
 
+    def get_platform_earnings(self) -> dict[str, Decimal]:
+        """Get platform commission earnings by currency."""
+        with self.db.session() as session:
+            orders = session.exec(
+                select(Order).where(Order.state.in_(["PAID", "SHIPPED", "COMPLETED"]))
+            ).all()
+
+            earnings = {"XMR": Decimal(0), "BTC": Decimal(0), "ETH": Decimal(0)}
+
+            for order in orders:
+                currency = getattr(order, 'payment_currency', 'XMR') or 'XMR'
+                commission = getattr(order, 'commission_crypto', None)
+                if commission:
+                    earnings[currency] += commission
+                elif currency == "XMR":
+                    # Fallback to legacy field
+                    earnings[currency] += order.commission_xmr
+
+            return earnings
+
     def get_platform_stats(self) -> dict:
         """Get platform statistics for super admin."""
         with self.db.session() as session:
@@ -227,14 +281,20 @@ class PayoutService:
             ))
             sent_amount = sum(p.amount_xmr for p in sent_payouts)
 
+            # Get earnings by currency
+            earnings = self.get_platform_earnings()
+
             return {
                 "total_orders": total_orders,
                 "paid_orders": paid_orders,
                 "total_commission_xmr": total_commission,
+                "commission_earnings": earnings,
                 "pending_payouts": len(pending_payouts),
                 "pending_payout_amount_xmr": pending_amount,
                 "completed_payouts": len(sent_payouts),
                 "completed_payout_amount_xmr": sent_amount,
                 "commission_rate": self.get_platform_commission_rate(),
-                "platform_wallet": self.get_platform_wallet(),
+                "platform_wallet_xmr": self.get_platform_wallet("XMR"),
+                "platform_wallet_btc": self.get_platform_wallet("BTC"),
+                "platform_wallet_eth": self.get_platform_wallet("ETH"),
             }

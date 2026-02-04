@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 
 from ..config import get_settings
 from ..error_handler import RetryableError
+from .payment_protocol import PaymentServiceProtocol
 
 logger = logging.getLogger(__name__)
 
@@ -114,7 +115,23 @@ class MoneroPaymentService:
             return False  # In demo mode, payments stay pending
 
         raise RetryableError("Failed to check payment status")
-    
+
+    def get_confirmations(self, payment_id: str) -> int:
+        """Get the number of confirmations for a payment."""
+        try:
+            wallet = self._get_wallet()
+            if wallet:
+                transfers = wallet.incoming(payment_id=payment_id)
+                if transfers:
+                    min_confirmations = min(
+                        t.transaction.confirmations or 0 for t in transfers
+                    )
+                    return min_confirmations
+        except Exception as e:
+            logger.error(f"Failed to get confirmations: {e}")
+
+        return 0
+
     def get_balance(self) -> Decimal:
         """Get wallet balance."""
         try:

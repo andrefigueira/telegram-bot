@@ -91,16 +91,16 @@ class TestPaymentMethodsKeyboard:
         kb = payment_methods_keyboard()
         assert isinstance(kb, InlineKeyboardMarkup)
         buttons = [btn for row in kb.inline_keyboard for btn in row]
-        xmr_btns = [b for b in buttons if "XMR" in b.text and "[x]" in b.text]
+        xmr_btns = [b for b in buttons if "XMR" in b.text and "✓" in b.text]
         assert len(xmr_btns) == 1
 
     def test_payment_methods_keyboard_custom_selection(self):
         """Test payment methods with custom selection."""
         kb = payment_methods_keyboard(selected=["BTC", "ETH"])
         buttons = [btn for row in kb.inline_keyboard for btn in row]
-        btc_btns = [b for b in buttons if "BTC" in b.text and "[x]" in b.text]
-        eth_btns = [b for b in buttons if "ETH" in b.text and "[x]" in b.text]
-        xmr_btns = [b for b in buttons if "XMR" in b.text and "[ ]" in b.text]
+        btc_btns = [b for b in buttons if "BTC" in b.text and "✓" in b.text]
+        eth_btns = [b for b in buttons if "ETH" in b.text and "✓" in b.text]
+        xmr_btns = [b for b in buttons if "XMR" in b.text and "○" in b.text]
         assert len(btc_btns) == 1
         assert len(eth_btns) == 1
         assert len(xmr_btns) == 1
@@ -277,23 +277,23 @@ class TestPaymentCoinKeyboard:
 
     def test_payment_coin_keyboard_default(self):
         """Test payment coin keyboard with default coins."""
-        kb = payment_coin_keyboard(123)
+        kb = payment_coin_keyboard()
         buttons = [btn for row in kb.inline_keyboard for btn in row]
-        coin_btns = [b for b in buttons if "order:pay:123:" in b.callback_data]
-        assert len(coin_btns) == 1  # Only XMR by default
+        coin_btns = [b for b in buttons if "order:currency:" in b.callback_data]
+        assert len(coin_btns) == 3  # XMR, BTC, ETH by default
 
     def test_payment_coin_keyboard_multiple(self):
         """Test payment coin keyboard with multiple coins."""
-        kb = payment_coin_keyboard(123, accepted_coins=["XMR", "BTC", "ETH"])
+        kb = payment_coin_keyboard(accepted_coins=["XMR", "BTC"])
         buttons = [btn for row in kb.inline_keyboard for btn in row]
-        coin_btns = [b for b in buttons if "order:pay:123:" in b.callback_data]
-        assert len(coin_btns) == 3
+        coin_btns = [b for b in buttons if "order:currency:" in b.callback_data]
+        assert len(coin_btns) == 2
 
     def test_payment_coin_keyboard_has_cancel(self):
         """Test payment coin keyboard has cancel button."""
-        kb = payment_coin_keyboard(123)
+        kb = payment_coin_keyboard()
         buttons = [btn for row in kb.inline_keyboard for btn in row]
-        cancel_btns = [b for b in buttons if "order:cancel:123" in b.callback_data]
+        cancel_btns = [b for b in buttons if "menu:main" in b.callback_data]
         assert len(cancel_btns) == 1
 
 
@@ -561,8 +561,12 @@ class TestConstants:
 
     def test_supported_coins(self):
         """Test supported coins list."""
-        assert len(SUPPORTED_COINS) > 0
-        assert ("XMR", "Monero") in SUPPORTED_COINS
+        assert len(SUPPORTED_COINS) == 3  # XMR, BTC, ETH
+        # Check format: (code, name, emoji)
+        codes = [coin[0] for coin in SUPPORTED_COINS]
+        assert "XMR" in codes
+        assert "BTC" in codes
+        assert "ETH" in codes
 
     def test_supported_currencies(self):
         """Test supported currencies list."""

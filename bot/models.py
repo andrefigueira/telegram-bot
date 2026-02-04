@@ -27,7 +27,9 @@ class Payout(SQLModel, table=True):
     order_id: int = Field(foreign_key="order.id")
     vendor_id: int = Field(foreign_key="vendor.id")
     amount_xmr: Decimal = Field(default=Decimal("0"), sa_column=Column(Numeric(precision=20, scale=8, asdecimal=True)))
-    tx_hash: Optional[str] = None  # Monero transaction hash
+    payment_currency: str = "XMR"  # XMR, BTC, ETH
+    amount_crypto: Decimal = Field(default=Decimal("0"), sa_column=Column(Numeric(precision=20, scale=8, asdecimal=True)))
+    tx_hash: Optional[str] = None  # Transaction hash (any currency)
     status: str = "PENDING"  # PENDING, SENT, CONFIRMED, FAILED
     created_at: datetime = Field(default_factory=datetime.utcnow)
     sent_at: Optional[datetime] = None
@@ -73,7 +75,9 @@ class Vendor(SQLModel, table=True):
     # Vendor settings (persisted)
     pricing_currency: str = "USD"
     shop_name: Optional[str] = None
-    wallet_address: Optional[str] = None
+    wallet_address: Optional[str] = None  # XMR wallet
+    btc_wallet_address: Optional[str] = None
+    eth_wallet_address: Optional[str] = None
     accepted_payments: str = "XMR"  # Comma-separated list of accepted coins
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -89,6 +93,12 @@ class Order(SQLModel, table=True):
     address_encrypted: str
     commission_xmr: Decimal = Field(default=Decimal("0"), sa_column=Column(Numeric(precision=20, scale=8, asdecimal=True)))
     state: str = "NEW"  # NEW, PAID, SHIPPED, COMPLETED, CANCELLED
+    # Multi-currency payment fields
+    payment_currency: str = "XMR"  # XMR, BTC, ETH
+    payment_amount_crypto: Decimal = Field(default=Decimal("0"), sa_column=Column(Numeric(precision=20, scale=8, asdecimal=True)))
+    commission_crypto: Decimal = Field(default=Decimal("0"), sa_column=Column(Numeric(precision=20, scale=8, asdecimal=True)))
+    crypto_tx_hash: Optional[str] = None
+    crypto_confirmations: int = 0
     # Postage/shipping
     postage_type_id: Optional[int] = Field(default=None, foreign_key="postagetype.id")
     postage_xmr: Decimal = Field(default=Decimal("0"), sa_column=Column(Numeric(precision=20, scale=8, asdecimal=True)))
@@ -123,6 +133,10 @@ class Database:
                 migrations.append("ALTER TABLE vendor ADD COLUMN shop_name VARCHAR(255)")
             if 'wallet_address' not in columns:
                 migrations.append("ALTER TABLE vendor ADD COLUMN wallet_address VARCHAR(255)")
+            if 'btc_wallet_address' not in columns:
+                migrations.append("ALTER TABLE vendor ADD COLUMN btc_wallet_address VARCHAR(255)")
+            if 'eth_wallet_address' not in columns:
+                migrations.append("ALTER TABLE vendor ADD COLUMN eth_wallet_address VARCHAR(255)")
             if 'accepted_payments' not in columns:
                 migrations.append("ALTER TABLE vendor ADD COLUMN accepted_payments VARCHAR(100) DEFAULT 'XMR'")
 
@@ -147,6 +161,25 @@ class Database:
                 migrations.append("ALTER TABLE `order` ADD COLUMN shipped_at DATETIME")
             if 'shipping_note' not in columns:
                 migrations.append("ALTER TABLE `order` ADD COLUMN shipping_note TEXT")
+            if 'payment_currency' not in columns:
+                migrations.append("ALTER TABLE `order` ADD COLUMN payment_currency VARCHAR(10) DEFAULT 'XMR'")
+            if 'payment_amount_crypto' not in columns:
+                migrations.append("ALTER TABLE `order` ADD COLUMN payment_amount_crypto DECIMAL(20,8) DEFAULT 0")
+            if 'commission_crypto' not in columns:
+                migrations.append("ALTER TABLE `order` ADD COLUMN commission_crypto DECIMAL(20,8) DEFAULT 0")
+            if 'crypto_tx_hash' not in columns:
+                migrations.append("ALTER TABLE `order` ADD COLUMN crypto_tx_hash VARCHAR(255)")
+            if 'crypto_confirmations' not in columns:
+                migrations.append("ALTER TABLE `order` ADD COLUMN crypto_confirmations INT DEFAULT 0")
+
+        # Check if payout table exists and add missing columns
+        if 'payout' in inspector.get_table_names():
+            columns = [col['name'] for col in inspector.get_columns('payout')]
+
+            if 'payment_currency' not in columns:
+                migrations.append("ALTER TABLE payout ADD COLUMN payment_currency VARCHAR(10) DEFAULT 'XMR'")
+            if 'amount_crypto' not in columns:
+                migrations.append("ALTER TABLE payout ADD COLUMN amount_crypto DECIMAL(20,8) DEFAULT 0")
 
         if migrations:
             with self.engine.connect() as conn:

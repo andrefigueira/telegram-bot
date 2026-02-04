@@ -624,18 +624,35 @@ async def handle_admin_text_input(
     elif awaiting == 'platform_wallet':
         if _is_super_admin(user_id):
             payout = context.bot_data.get('payout_service')
-            if payout and len(text) >= 95 and (text.startswith('4') or text.startswith('8')):
-                payout.set_platform_wallet(text)
+            currency = context.user_data.get('platform_wallet_currency', 'XMR')
+
+            # Validate address based on currency
+            valid = False
+            error_msg = f"Invalid {currency} address."
+
+            if currency == "XMR":
+                valid = len(text) >= 95 and (text.startswith('4') or text.startswith('8'))
+                error_msg = "Invalid Monero address. Please send a valid XMR address (starts with 4 or 8, 95+ chars)."
+            elif currency == "BTC":
+                from ..services.bitcoin_payment import BitcoinPaymentService
+                valid = BitcoinPaymentService.validate_address(text)
+                error_msg = "Invalid Bitcoin address. Please send a valid BTC address (starts with 1, 3, or bc1)."
+            elif currency == "ETH":
+                from ..services.ethereum_payment import EthereumPaymentService
+                valid = EthereumPaymentService.validate_address(text)
+                error_msg = "Invalid Ethereum address. Please send a valid ETH address (starts with 0x, 42 chars)."
+
+            if payout and valid:
+                payout.set_platform_wallet(text, currency)
                 context.user_data['awaiting_input'] = None
+                context.user_data['platform_wallet_currency'] = None
                 await update.message.reply_text(
-                    f"*Platform Wallet Set!*\n\n`{text[:30]}...`",
+                    f"*Platform {currency} Wallet Set!*\n\n`{text[:30]}...`",
                     parse_mode='Markdown',
                     reply_markup=super_admin_keyboard()
                 )
             else:
-                await update.message.reply_text(
-                    "Invalid Monero address. Please send a valid XMR address."
-                )
+                await update.message.reply_text(error_msg)
 
     elif awaiting == 'custom_commission':
         if _is_super_admin(user_id):
@@ -734,15 +751,38 @@ async def handle_super_admin_callback(
 
     elif action == "stats" and payout:
         stats = payout.get_platform_stats()
-        wallet_display = stats['platform_wallet'][:20] + "..." if stats['platform_wallet'] else "Not set"
+        earnings = payout.get_platform_earnings()
+
+        # Build multi-currency earnings display
+        earnings_lines = []
+        for currency in ["XMR", "BTC", "ETH"]:
+            amount = earnings.get(currency, 0)
+            if amount > 0:
+                if currency == "BTC":
+                    earnings_lines.append(f"₿ {amount:.8f} BTC")
+                elif currency == "ETH":
+                    earnings_lines.append(f"Ξ {amount:.6f} ETH")
+                else:
+                    earnings_lines.append(f"🔒 {amount:.8f} XMR")
+        earnings_display = "\n".join(earnings_lines) if earnings_lines else "No earnings yet"
+
+        # Build multi-currency wallets display
+        wallet_lines = []
+        for currency in ["XMR", "BTC", "ETH"]:
+            wallet_addr = payout.get_platform_wallet(currency)
+            if wallet_addr:
+                short_addr = wallet_addr[:15] + "..." if len(wallet_addr) > 15 else wallet_addr
+                wallet_lines.append(f"*{currency}:* `{short_addr}`")
+        wallets_display = "\n".join(wallet_lines) if wallet_lines else "No wallets set"
+
         await query.edit_message_text(
             f"*Platform Statistics*\n\n"
-            f"*Orders:* {stats['paid_orders']}/{stats['total_orders']} paid\n"
-            f"*Commission Earned:* {stats['total_commission_xmr']:.6f} XMR\n\n"
+            f"*Orders:* {stats['paid_orders']}/{stats['total_orders']} paid\n\n"
+            f"*Commission Earned:*\n{earnings_display}\n\n"
             f"*Pending Payouts:* {stats['pending_payouts']} ({stats['pending_payout_amount_xmr']:.6f} XMR)\n"
             f"*Completed Payouts:* {stats['completed_payouts']} ({stats['completed_payout_amount_xmr']:.6f} XMR)\n\n"
-            f"*Commission Rate:* {float(stats['commission_rate']) * 100:.1f}%\n"
-            f"*Platform Wallet:* `{wallet_display}`",
+            f"*Commission Rate:* {float(stats['commission_rate']) * 100:.1f}%\n\n"
+            f"*Platform Wallets:*\n{wallets_display}",
             parse_mode='Markdown',
             reply_markup=super_admin_keyboard()
         )
@@ -776,10 +816,34 @@ async def handle_super_admin_callback(
         )
 
     elif action == "wallet":
-        context.user_data['awaiting_input'] = 'platform_wallet'
+        from ..keyboards import SUPPORTED_COINS
+        keyboard = []
+        for coin_code, coin_name, emoji in SUPPORTED_COINS:
+            keyboard.append([{
+                "text": f"{emoji} {coin_name} ({coin_code})",
+                "callback_data": f"sadmin:wallet_currency:{coin_code}"
+            }])
+        keyboard.append([{"text": "Back", "callback_data": "sadmin:main"}])
+
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+        markup = InlineKeyboardMarkup([[InlineKeyboardButton(btn["text"], callback_data=btn["callback_data"])] for row in keyboard for btn in row])
+
         await query.edit_message_text(
             "*Set Platform Wallet*\n\n"
-            "Enter the Monero (XMR) address for platform earnings:",
+            "Select the cryptocurrency:",
+            parse_mode='Markdown',
+            reply_markup=markup
+        )
+
+    elif action == "wallet_currency" and len(parts) >= 3:
+        currency = parts[2].upper()
+        context.user_data['awaiting_input'] = 'platform_wallet'
+        context.user_data['platform_wallet_currency'] = currency
+
+        currency_names = {"XMR": "Monero", "BTC": "Bitcoin", "ETH": "Ethereum"}
+        await query.edit_message_text(
+            f"*Set Platform {currency} Wallet*\n\n"
+            f"Enter your {currency_names.get(currency, currency)} address:",
             parse_mode='Markdown'
         )
 
